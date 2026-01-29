@@ -465,8 +465,8 @@ if user["role"] == "teacher":
         # Roep de functie aan
         render_lesregistratie()
 # -------------------------------------------------
-    # TAB 3 – VISUALISATIES & ANALYSE
-    # -------------------------------------------------
+# TAB 3 – VISUALISATIES & ANALYSE
+# -------------------------------------------------
     with tab3:
         # FRAGMENT: Zorgt dat filters alleen dit deel herladen (sneller)
         @st.fragment
@@ -563,6 +563,54 @@ if user["role"] == "teacher":
                 fig.add_hrect(y0=0, y1=2.5, fillcolor="#e74c3c", opacity=0.1, line_width=0, annotation_text="⚠️ Let op", annotation_position="bottom right")
                 
                 st.plotly_chart(fig, use_container_width=True)
+
+                # ==========================================
+                # NIEUW: 2-WEKELIJKSE TREND ANALYSE
+                # ==========================================
+                st.markdown("##### 📉 Trend Analyse (Laatste 2 weken vs. 2 weken ervoor)")
+                
+                now = pd.Timestamp.now()
+                # Periode 1: Huidige 2 weken (0-14 dagen geleden)
+                date_start_cur = now - pd.Timedelta(days=14)
+                # Periode 2: Vorige 2 weken (14-28 dagen geleden)
+                date_start_prev = now - pd.Timedelta(days=28)
+
+                # Data filteren
+                df_cur = plot_df[plot_df["Datum"] >= date_start_cur]
+                df_prev = plot_df[(plot_df["Datum"] >= date_start_prev) & (plot_df["Datum"] < date_start_cur)]
+
+                if not df_cur.empty:
+                    # Gemiddelden berekenen
+                    avg_en_cur = df_cur["Energie"].mean()
+                    avg_ru_cur = df_cur["Rust"].mean()
+                    
+                    # Vorige gemiddelden (0 als er geen data is)
+                    avg_en_prev = df_prev["Energie"].mean() if not df_prev.empty else 0
+                    avg_ru_prev = df_prev["Rust"].mean() if not df_prev.empty else 0
+
+                    # Verschil berekenen (delta toont automatisch rood/groen)
+                    # Let op: als prev 0 is, is de delta gewoon de huidige score (of je kan delta uitzetten)
+                    delta_en = avg_en_cur - avg_en_prev if not df_prev.empty else 0
+                    delta_ru = avg_ru_cur - avg_ru_prev if not df_prev.empty else 0
+
+                    c_trend1, c_trend2 = st.columns(2)
+                    
+                    with c_trend1:
+                        st.metric(
+                            label="Gem. Energie (laatste 14d)", 
+                            value=f"{avg_en_cur:.1f}", 
+                            delta=f"{delta_en:+.1f}" if delta_en != 0 else None
+                        )
+                    
+                    with c_trend2:
+                        st.metric(
+                            label="Gem. Rust (laatste 14d)", 
+                            value=f"{avg_ru_cur:.1f}", 
+                            delta=f"{delta_ru:+.1f}" if delta_ru != 0 else None
+                        )
+                else:
+                    st.info("Nog onvoldoende recente data voor een trendanalyse van de laatste 2 weken.")
+
             else:
                 st.info("Nog geen daggevoel geregistreerd.")
 
@@ -713,26 +761,26 @@ if user["role"] == "teacher":
         toon_tab3_inhoud()
         
 # -------------------------------------------------
-    # TAB 4 – RAPPORT, INZICHTEN & CORRELATIES
-    # -------------------------------------------------
+# TAB 4 – RAPPORT GENERATOR
+# -------------------------------------------------
     with tab4:
-        st.header("📑 Persoonlijk Rapport & Diepteanalyse")
+        st.header("📑 Rapport Generator")
+        st.write("Genereer een uitgebreid PDF-rapport met al je statistieken, vergelijkingen en correlaties. Er worden hier geen grafieken getoond, deze verschijnen direct in het gedownloade bestand.")
 
         # 1. SELECTIE PERIODE
         r_col1, r_col2 = st.columns([2, 1])
         with r_col1:
             rapport_periode = st.selectbox(
-                "📅 Selecteer periode:",
+                "📅 Selecteer periode voor het rapport:",
                 ["Laatste 2 weken", "Laatste 30 dagen", "Huidig Schooljaar"],
                 index=1,
                 key="rep_periode_select"
             )
 
-        # 2. DATA VOORBEREIDING
+        # 2. DATA VOORBEREIDING (Op de achtergrond voor de PDF)
         # ---------------------
         
         # A. GLOBALE DATA LADEN (BENCHMARK)
-        # We moeten alle data inladen om het gemiddelde van "alle leerkrachten" te weten
         try:
             # Pas bestandsnamen aan als ze anders heten in jouw project
             benchmark_day_df = pd.read_csv("dag_check_db.csv") 
@@ -748,7 +796,6 @@ if user["role"] == "teacher":
                     benchmark_les_df[col] = pd.to_numeric(benchmark_les_df[col], errors='coerce')
                     
         except FileNotFoundError:
-            st.warning("Kan globale database niet vinden voor benchmark. Vergelijking is tijdelijk uitgeschakeld.")
             benchmark_day_df = pd.DataFrame()
             benchmark_les_df = pd.DataFrame()
 
@@ -770,8 +817,7 @@ if user["role"] == "teacher":
         elif rapport_periode == "Huidig Schooljaar":
             start_date = pd.Timestamp(year=now.year - 1 if now.month < 9 else now.year, month=9, day=1)
 
-        # Ophalen uit de sessie data (die al gefilterd is op de ingelogde gebruiker in 'day_df' en 'les_df')
-        # We gebruiken hier globals check of locals om crashes te voorkomen
+        # Ophalen uit de sessie data
         r_day_df = day_df.copy() if 'day_df' in globals() or 'day_df' in locals() else pd.DataFrame(columns=["Datum", "Energie", "Stress"])
         r_les_df = les_df.copy() if 'les_df' in globals() or 'les_df' in locals() else pd.DataFrame(columns=["Datum", "Klas", "Lesaanpak", "Klasmanagement"])
 
@@ -794,32 +840,9 @@ if user["role"] == "teacher":
         def get_delta_text(current, benchmark, reverse=False):
             if benchmark == 0: return "-"
             diff = current - benchmark
-            # Als reverse True is (bijv Stress), is een negatief getal goed, maar streamlits metric component snapt dat zelf
-            # We tonen hier puur het verschil
             return f"{diff:+.1f} vs alle leerkrachten"
 
-        # 3. DASHBOARD WEERGAVE (KPI's)
-        # -----------------------------
-        st.markdown("### 📊 Jouw prestaties vs. Het Gemiddelde")
-        
-        k1, k2, k3, k4 = st.columns(4)
-        
-        # Energie: Hoger is beter
-        k1.metric("Gem. Energie", f"{gem_en:.1f}", get_delta_text(gem_en, glob_avg_en))
-        
-        # Stress: Lager is beter (dus delta_color='inverse' zorgt dat -0.5 groen wordt en +0.5 rood)
-        k2.metric("Gem. Stress", f"{gem_str:.1f}", get_delta_text(gem_str, glob_avg_str, reverse=True), delta_color="inverse")
-        
-        # Lesaanpak: Hoger is beter
-        k3.metric("Gem. Lesaanpak", f"{gem_les:.1f}", get_delta_text(gem_les, glob_avg_les))
-        
-        # Klasmanagement: Hoger is beter
-        k4.metric("Gem. Management", f"{gem_mng:.1f}", get_delta_text(gem_mng, glob_avg_mng))
-
-        st.caption(f"*Vergelijking gebaseerd op data van alle leerkrachten in de database.")
-        st.divider()
-
-        # 4. DATA MERGEN VOOR CORRELATIES
+        # 3. DATA MERGEN VOOR CORRELATIES (Nodig voor de PDF)
         # ----------------------------------
         merged_df = pd.DataFrame()
         has_correlation_data = False
@@ -830,45 +853,9 @@ if user["role"] == "teacher":
                 merged_df["Rust"] = 6 - merged_df["Stress"]
                 has_correlation_data = True
 
-        # 5. CORRELATIE MATRIX & INZICHTEN
-        c_col1, c_col2 = st.columns([1, 1])
-        
-        with c_col1:
-            st.subheader("🔍 Samenhang (Correlaties)")
-            st.caption("Rood = Sterk verband. Blauw = Tegenpolen.")
-            
-            if has_correlation_data:
-                import seaborn as sns
-                corr_data = merged_df[["Klasmanagement", "Lesaanpak", "Energie", "Rust"]].corr()
-                fig_corr, ax_corr = plt.subplots(figsize=(5, 4))
-                sns.heatmap(corr_data, annot=True, cmap="coolwarm", vmin=-1, vmax=1, center=0, 
-                            fmt=".2f", linewidths=0.5, ax=ax_corr, cbar=False)
-                st.pyplot(fig_corr)
-            else:
-                st.info("Nog onvoldoende gecombineerde data (Dag + Les) voor een correlatiematrix.")
-
-        with c_col2:
-            st.subheader("💡 Inzichten")
-            if has_correlation_data:
-                corr_matrix = corr_data.copy()
-                np.fill_diagonal(corr_matrix.values, 0)
-                max_val = corr_matrix.max().max()
-                row_idx, col_idx = np.unravel_index(corr_matrix.values.argmax(), corr_matrix.values.shape)
-                var1, var2 = corr_matrix.columns[row_idx], corr_matrix.columns[col_idx]
-                
-                st.write(f"**Sterkste verband:**")
-                st.info(f"Er is een sterke positieve link ({max_val:.2f}) gevonden tussen **{var1}** en **{var2}**.")
-                
-                st.write("**Betekenis:**")
-                st.markdown("""
-                * **Energie & Management:** Fit zijn helpt om de klas in de hand te houden.
-                * **Rust & Aanpak:** Een kalm hoofd zorgt vaak voor betere didactiek.
-                """)
-            else:
-                st.write("Vul meer data in op dezelfde dagen om hier automatische inzichten te krijgen.")
-
-        # 6. PDF RAPPORT GENEREREN
-        # ------------------------
+        # -------------------------------------------------------
+        # PDF RAPPORT GENEREREN (CODE ONGEWIJZIGD, MAAR ESSENTIEEL)
+        # -------------------------------------------------------
         st.divider()
         
         try:
@@ -876,12 +863,13 @@ if user["role"] == "teacher":
             from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
             from reportlab.lib.styles import getSampleStyleSheet
             from reportlab.lib import colors
+            import seaborn as sns 
             pdf_available = True
         except ImportError:
             pdf_available = False
-            st.error("⚠️ PDF Module (ReportLab) ontbreekt.")
+            st.error("⚠️ PDF Module (ReportLab of Seaborn) ontbreekt.")
 
-        if pdf_available and aantal_l > 0:
+        if pdf_available:
             
             def generate_pdf():
                 buffer = io.BytesIO()
@@ -915,7 +903,7 @@ if user["role"] == "teacher":
                 story.append(Paragraph("In deze tabel vergelijken we jouw gemiddelden van de gekozen periode met het gemiddelde van alle leerkrachten in het systeem.", styles["Normal"]))
                 story.append(Spacer(1, 10))
                 
-                # Tabel data - AANGEPAST NAAR GLOBAL BENCHMARK
+                # Tabel data
                 tbl_data = [
                     ["Indicator", "Jouw Score", "Gem. Alle Leerkrachten", "Verschil"],
                     ["Energie", f"{gem_en:.1f}", f"{glob_avg_en:.1f}", get_delta_text(gem_en, glob_avg_en)],
@@ -939,6 +927,7 @@ if user["role"] == "teacher":
                 # SECTIE 2: Correlaties
                 story.append(Paragraph("2. Samenhang & Patronen", h2_style))
                 if has_correlation_data:
+                    story.append(Paragraph("De onderstaande heatmap toont correlaties tussen jouw welzijn en lesprestaties.", styles["Normal"]))
                     fig_pdf_corr, ax_pdf_corr = plt.subplots(figsize=(6, 4))
                     sns.heatmap(merged_df[["Klasmanagement", "Lesaanpak", "Energie", "Rust"]].corr(), 
                                 annot=True, cmap="coolwarm", vmin=-1, vmax=1, center=0, 
@@ -947,7 +936,7 @@ if user["role"] == "teacher":
                     story.append(plot_to_img(fig_pdf_corr))
                     plt.close(fig_pdf_corr)
                 else:
-                    story.append(Paragraph("Onvoldoende data om correlaties te berekenen.", styles["Italic"]))
+                    story.append(Paragraph("Onvoldoende data om correlaties te berekenen in deze periode.", styles["Italic"]))
 
                 # SECTIE 3: Weekpatroon
                 story.append(Paragraph("3. Weekpatroon (Lesaanpak)", h2_style))
@@ -964,21 +953,28 @@ if user["role"] == "teacher":
                         ax_bar.grid(axis='y', linestyle='--', alpha=0.5)
                         story.append(plot_to_img(fig_bar))
                         plt.close(fig_bar)
+                    else:
+                        story.append(Paragraph("Geen weekpatroon beschikbaar.", styles["Italic"]))
+                else:
+                    story.append(Paragraph("Geen lesdata beschikbaar.", styles["Italic"]))
 
                 doc.build(story)
                 buffer.seek(0)
                 return buffer
 
-            pdf_data = generate_pdf()
-            clean_filename = f"Rapport_{user['email'].split('@')[0].replace('.', '_')}.pdf"
-            
-            st.download_button(
-                label="📥 Download Rapport (PDF)",
-                data=pdf_data,
-                file_name=clean_filename,
-                mime="application/pdf",
-                type="primary"
-            )
+            if aantal_l > 0 or not r_day_df.empty:
+                pdf_data = generate_pdf()
+                clean_filename = f"Rapport_{user['email'].split('@')[0].replace('.', '_')}.pdf"
+                
+                st.download_button(
+                    label="📥 Download Rapport (PDF)",
+                    data=pdf_data,
+                    file_name=clean_filename,
+                    mime="application/pdf",
+                    type="primary"
+                )
+            else:
+                st.warning("Er is geen data beschikbaar in de gekozen periode om een rapport van te maken.")
                         
 # <--- BELANGRIJK: DEZE ELIF MOET HELEMAAL TERUG NAAR LINKS (OF HETZELFDE NIVEAU ALS IF TEACHER)
 elif user["role"] == "director":
