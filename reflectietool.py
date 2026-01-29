@@ -514,186 +514,218 @@ if user["role"] == "teacher":
 # =============== DIRECTIE VIEW ===================
 # =================================================
 elif user["role"] == "director":
-    st.header("🎓 Directie Dashboard (Anoniem)")
-    st.info("Dit dashboard combineert live welzijnsdata (Google Sheets) met lesregistraties.")
-
+    st.header("🎓 Directie Dashboard")
+    
     # ---------------------------------------------------------
-    # STAP 1: DATA VERZAMELEN
+    # STAP 1: DATA LADEN & VOORBEREIDEN
     # ---------------------------------------------------------
     
-    # A. Lesdata laden (uit lokale CSV's via je helper functie)
-    _, df_lessons_total = load_all_school_data()
+    # A. Lesdata (Lokaal CSV)
+    _, df_lessons_raw = load_all_school_data()
+    if not df_lessons_raw.empty:
+        df_lessons_raw["Datum"] = pd.to_datetime(df_lessons_raw["Datum"], errors='coerce')
+        df_lessons_raw = df_lessons_raw.dropna(subset=["Datum"])
 
-    # B. Welzijnsdata laden (LIVE uit Google Sheets)
+    # B. Welzijnsdata (Google Sheets)
     conn = st.connection("gsheets", type=GSheetsConnection)
     try:
         df_sheet = conn.read(spreadsheet=SHEET_URL, ttl=0)
-        
-        # Schoonmaken van Google Sheets data (belangrijk voor berekeningen!)
         if not df_sheet.empty and "Datum" in df_sheet.columns:
             df_sheet["Datum"] = pd.to_datetime(df_sheet["Datum"], errors='coerce')
             df_sheet["Energie"] = pd.to_numeric(df_sheet["Energie"], errors='coerce')
             df_sheet["Stress"] = pd.to_numeric(df_sheet["Stress"], errors='coerce')
-            # Verwijder ongeldige rijen
-            df_wellbeing_total = df_sheet.dropna(subset=["Datum", "Energie", "Stress"])
+            df_wellbeing_raw = df_sheet.dropna(subset=["Datum", "Energie", "Stress"])
         else:
-            df_wellbeing_total = pd.DataFrame(columns=["Datum", "Energie", "Stress", "Email"])
-            
+            df_wellbeing_raw = pd.DataFrame(columns=["Datum", "Energie", "Stress", "Email"])
     except Exception as e:
-        st.error(f"Kan geen verbinding maken met Google Sheets: {e}")
-        df_wellbeing_total = pd.DataFrame(columns=["Datum", "Energie", "Stress"])
+        st.error(f"Google Sheets Error: {e}")
+        df_wellbeing_raw = pd.DataFrame(columns=["Datum", "Energie", "Stress"])
 
     # ---------------------------------------------------------
-    # STAP 2: KPI's BOVENAAN
+    # STAP 2: 🎛️ CONTROL PANEL (FILTERS)
+    # ---------------------------------------------------------
+    with st.expander("🎛️ Filters & Instellingen", expanded=True):
+        col_f1, col_f2 = st.columns(2)
+        
+        # 1. DATUM FILTER (Voor evolutie analyse)
+        with col_f1:
+            st.markdown("##### 📅 Periode Selecteren")
+            # Standaard: Huidige schooljaar (bv. 1 sept tot vandaag)
+            today = date.today()
+            start_schooljaar = date(today.year if today.month >= 9 else today.year - 1, 9, 1)
+            
+            date_range = st.date_input(
+                "Kies periode",
+                value=(start_schooljaar, today),
+                key="director_date_range"
+            )
+            
+            # Zorg dat we een start en eind hebben (soms selecteert user er maar 1)
+            if isinstance(date_range, tuple) and len(date_range) == 2:
+                start_date, end_date = date_range
+                start_date = pd.Timestamp(start_date)
+                end_date = pd.Timestamp(end_date)
+            else:
+                st.warning("Selecteer een start- en einddatum.")
+                st.stop()
+
+        # 2. KLAS FILTER (Voor Sankey clutter reductie)
+        with col_f2:
+            st.markdown("##### 🏫 Klassen Selecteren")
+            if not df_lessons_raw.empty:
+                all_klassen = sorted(df_lessons_raw["Klas"].unique())
+                # Standaard alles selecteren, maar makkelijk uit te zetten
+                selected_klassen = st.multiselect(
+                    "Toon data voor:",
+                    options=all_klassen,
+                    default=all_klassen,
+                    placeholder="Kies klassen..."
+                )
+            else:
+                selected_klassen = []
+
+    # ---------------------------------------------------------
+    # STAP 3: DATA FILTEREN
     # ---------------------------------------------------------
     
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    # Filter Lesdata
+    mask_lessons = (
+        (df_lessons_raw["Datum"] >= start_date) & 
+        (df_lessons_raw["Datum"] <= end_date) & 
+        (df_lessons_raw["Klas"].isin(selected_klassen))
+    )
+    df_lessons_filtered = df_lessons_raw.loc[mask_lessons].copy()
+
+    # Filter Welzijnsdata (Alleen op datum, want is niet gekoppeld aan klas)
+    mask_wellbeing = (
+        (df_wellbeing_raw["Datum"] >= start_date) & 
+        (df_wellbeing_raw["Datum"] <= end_date)
+    )
+    df_wellbeing_filtered = df_wellbeing_raw.loc[mask_wellbeing].copy()
+
+    if df_lessons_filtered.empty and df_wellbeing_filtered.empty:
+        st.warning("Geen data gevonden binnen deze filters.")
+        st.stop()
+
+    # ---------------------------------------------------------
+    # STAP 4: KPI's (OP BASIS VAN FILTER)
+    # ---------------------------------------------------------
+    st.markdown("---")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Geregistreerde Lessen", len(df_lessons_filtered))
+    k2.metric("Unieke Klassen", df_lessons_filtered['Klas'].nunique())
     
-    with kpi1:
-        # Aantal unieke e-mailadressen in de welzijnsdata
-        aantal_lk = df_wellbeing_total['Email'].nunique() if 'Email' in df_wellbeing_total.columns else 0
-        st.metric("Aantal Leerkrachten", aantal_lk)
+    avg_en = df_wellbeing_filtered['Energie'].mean() if not df_wellbeing_filtered.empty else 0
+    k3.metric("Gem. Team Energie", f"{avg_en:.1f}")
     
-    with kpi2:
-        # Gemiddelde energie (uit Sheets data)
-        avg_energy = df_wellbeing_total['Energie'].mean() if not df_wellbeing_total.empty else 0
-        st.metric("Gem. Energie Team", f"{avg_energy:.1f}/5")
-
-    with kpi3:
-        # Gemiddelde lesaanpak (uit lokale CSV data)
-        avg_aanpak = df_lessons_total['Lesaanpak'].mean() if not df_lessons_total.empty else 0
-        st.metric("Gem. Lesaanpak", f"{avg_aanpak:.1f}/5")
-
-    with kpi4:
-        st.metric("Lessen Geregistreerd", len(df_lessons_total))
-
+    avg_str = df_wellbeing_filtered['Stress'].mean() if not df_wellbeing_filtered.empty else 0
+    k4.metric("Gem. Team Stress", f"{avg_str:.1f}")
     st.markdown("---")
 
     # ---------------------------------------------------------
-    # STAP 3: VISUALISATIES
+    # STAP 5: VISUALISATIES
     # ---------------------------------------------------------
-
-    tab_overview, tab_wellbeing, tab_culture = st.tabs([
-        "📊 Klasstatistieken", 
-        "🧘 Welzijn Team (Trend)",
-        "🦋 Sfeermeter (Sankey)" 
+    tab_stats, tab_wellbeing, tab_culture = st.tabs([
+        "📊 Klas Statistieken & Evolutie", 
+        "🧘 Welzijn Team Trend", 
+        "🦋 Sfeer & Gedrag (Sankey)"
     ])
 
-    # --- TAB 1: Joyplots (Lessen) ---
-    with tab_overview:
-        st.subheader("Verdeling Lesaanpak & Management per Klas")
-        if not df_lessons_total.empty:
-            col_a, col_b = st.columns(2)
-            with col_a:
-                fig_aanpak = draw_ridgeline_artistic(df_lessons_total, "Lesaanpak", "Didactische Aanpak", "Teal")
-                if fig_aanpak: st.plotly_chart(fig_aanpak, use_container_width=True)
-            with col_b:
-                fig_mgmt = draw_ridgeline_artistic(df_lessons_total, "Klasmanagement", "Klasmanagement", "Sunset")
-                if fig_mgmt: st.plotly_chart(fig_mgmt, use_container_width=True)
-        else:
-            st.info("Nog geen lesregistraties beschikbaar.")
-
-    # --- TAB 2: Welzijn Team (Spectacular Design) ---
-    with tab_wellbeing:
-        st.subheader("📈 Hartslag van het Team")
-        st.markdown("Een real-time weergave van de balans tussen draagkracht en draaglast.")
-
-        if not df_wellbeing_total.empty:
-            # 1. DATA PREP
-            daily_avg = df_wellbeing_total.groupby("Datum")[["Energie", "Stress"]].mean().reset_index()
-            daily_avg = daily_avg.sort_values("Datum")
+    # === TAB 1: Statistieken & Evolutie ===
+    with tab_stats:
+        if not df_lessons_filtered.empty:
+            st.subheader(f"Data voor: {', '.join(selected_klassen) if len(selected_klassen) < 5 else 'Geselecteerde selectie'}")
             
-            # We gebruiken Graph Objects (go) voor fijnere controle dan Express (px)
-            fig_trend = go.Figure()
+            # A. DE JOYPLOTS (Verdeling)
+            col_joy1, col_joy2 = st.columns(2)
+            with col_joy1:
+                fig_aanpak = draw_ridgeline_artistic(df_lessons_filtered, "Lesaanpak", "Verdeling Lesaanpak", "Teal")
+                if fig_aanpak: st.plotly_chart(fig_aanpak, use_container_width=True)
+            with col_joy2:
+                fig_mgmt = draw_ridgeline_artistic(df_lessons_filtered, "Klasmanagement", "Verdeling Management", "Sunset")
+                if fig_mgmt: st.plotly_chart(fig_mgmt, use_container_width=True)
 
-            # -------------------------------------------------------
-            # TRACE 1: ENERGIE (De 'Glow' Trace)
-            # -------------------------------------------------------
+            # B. DE EVOLUTIE (HEATMAP)
+            st.write("---")
+            st.subheader("🗓️ Maandelijkse Evolutie per Klas")
+            st.caption("Hoe evolueren de scores (Management & Aanpak) maand na maand?")
+            
+            # Data voorbereiden voor heatmap
+            df_evo = df_lessons_filtered.copy()
+            df_evo['Maand'] = df_evo['Datum'].dt.strftime('%Y-%m')
+            
+            # Groepeer per Klas en Maand, neem gemiddelde van Management
+            evo_pivot = df_evo.pivot_table(index="Klas", columns="Maand", values="Klasmanagement", aggfunc="mean")
+            
+            if not evo_pivot.empty:
+                fig_heat = px.imshow(
+                    evo_pivot,
+                    labels=dict(x="Maand", y="Klas", color="Score"),
+                    x=evo_pivot.columns,
+                    y=evo_pivot.index,
+                    color_continuous_scale="RdBu", # Rood (slecht) naar Blauw (goed)
+                    zmin=1, zmax=5,
+                    title="Heatmap: Gemiddeld Klasmanagement per Maand"
+                )
+                fig_heat.update_layout(height=400 + (len(selected_klassen)*20))
+                st.plotly_chart(fig_heat, use_container_width=True)
+            else:
+                st.info("Onvoldoende spreiding over maanden voor een evolutie-overzicht.")
+        else:
+            st.info("Selecteer minstens één klas en een geldige datum om data te zien.")
+
+    # === TAB 2: Welzijn (Design Versie) ===
+    with tab_wellbeing:
+        if not df_wellbeing_filtered.empty:
+            st.subheader("📈 Hartslag van het Team")
+            
+            daily_avg = df_wellbeing_filtered.groupby("Datum")[["Energie", "Stress"]].mean().reset_index().sort_values("Datum")
+            
+            fig_trend = go.Figure()
+            # Energie Trace
             fig_trend.add_trace(go.Scatter(
-                x=daily_avg['Datum'], 
-                y=daily_avg['Energie'],
-                mode='lines',
-                name='Energie',
-                line=dict(color='#00E396', width=4, shape='spline', smoothing=1.3), # Neon Groen & Curved
-                fill='tozeroy', # Vul tot de bodem
-                fillcolor='rgba(0, 227, 150, 0.1)', # Heel lichte transparante vulling
+                x=daily_avg['Datum'], y=daily_avg['Energie'],
+                mode='lines', name='Energie',
+                line=dict(color='#00E396', width=4, shape='spline', smoothing=1.3),
+                fill='tozeroy', fillcolor='rgba(0, 227, 150, 0.1)',
                 hovertemplate="<b>Energie: %{y:.1f}</b><extra></extra>"
             ))
-
-            # -------------------------------------------------------
-            # TRACE 2: STRESS
-            # -------------------------------------------------------
+            # Stress Trace
             fig_trend.add_trace(go.Scatter(
-                x=daily_avg['Datum'], 
-                y=daily_avg['Stress'],
-                mode='lines',
-                name='Stress',
-                line=dict(color='#FF4560', width=4, shape='spline', smoothing=1.3), # Modern Rood & Curved
-                fill='tozeroy',
-                fillcolor='rgba(255, 69, 96, 0.1)', 
+                x=daily_avg['Datum'], y=daily_avg['Stress'],
+                mode='lines', name='Stress',
+                line=dict(color='#FF4560', width=4, shape='spline', smoothing=1.3),
+                fill='tozeroy', fillcolor='rgba(255, 69, 96, 0.1)',
                 hovertemplate="<b>Stress: %{y:.1f}</b><extra></extra>"
             ))
-
-            # -------------------------------------------------------
-            # DESIGN MAGIE (Layout)
-            # -------------------------------------------------------
+            
             fig_trend.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)', # Transparante achtergrond
-                plot_bgcolor='rgba(0,0,0,0)',
-                height=500,
-                hovermode="x unified", # Eén verticale lijn bij hoveren
-                xaxis=dict(
-                    showgrid=False, # Geen verticale lijnen (rustiger)
-                    showline=True,
-                    linecolor='rgba(100,100,100,0.2)',
-                    tickformat="%d %b" # Bv: "12 Okt"
-                ),
-                yaxis=dict(
-                    range=[0.5, 5.5],
-                    showgrid=True, # Wel horizontale lijnen voor leesbaarheid
-                    gridcolor='rgba(100,100,100,0.1)', # Zeer subtiel grijs
-                    zeroline=False,
-                    tickmode='array',
-                    tickvals=[1, 2, 3, 4, 5],
-                    ticktext=["1 (Laag)", "2", "3", "4", "5 (Hoog)"]
-                ),
-                legend=dict(
-                    orientation="h", # Horizontale legende
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                )
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=500,
+                hovermode="x unified",
+                xaxis=dict(showgrid=False, showline=True, linecolor='rgba(100,100,100,0.2)'),
+                yaxis=dict(range=[0.5, 5.5], showgrid=True, gridcolor='rgba(100,100,100,0.1)'),
+                legend=dict(orientation="h", y=1.02, x=1)
             )
-
-            # Voeg een "Danger Zone" band toe (Stress boven 4)
-            fig_trend.add_hrect(
-                y0=4.0, y1=5.5, 
-                fillcolor="#FF4560", opacity=0.05, 
-                line_width=0, annotation_text="⚠️ Hoge Druk Zone", annotation_position="top left"
-            )
-
+            fig_trend.add_hrect(y0=4.0, y1=5.5, fillcolor="#FF4560", opacity=0.05, line_width=0)
+            
             st.plotly_chart(fig_trend, use_container_width=True)
-
-            # Stijlvolle expander voor de data
-            with st.expander("🔍 Bekijk de details"):
-                st.dataframe(
-                    daily_avg.style.format({"Energie": "{:.1f}", "Stress": "{:.1f}"})
-                    .background_gradient(subset=["Energie"], cmap="Greens", vmin=1, vmax=5)
-                    .background_gradient(subset=["Stress"], cmap="Reds", vmin=1, vmax=5)
-                )
-
         else:
-            st.info("Nog geen data beschikbaar om te visualiseren.")
+            st.info("Geen welzijnsdata in de geselecteerde periode.")
 
-    # --- TAB 3: Sankey (Cultuur) ---
+    # === TAB 3: Sankey (Dynamisch) ===
     with tab_culture:
-        st.subheader("Flow: Negatief gedrag ➔ Klas ➔ Positief gedrag")
-        if not df_lessons_total.empty:
-            fig_sankey = draw_sankey_butterfly(df_lessons_total)
+        st.subheader("🦋 Sfeermeter: Oorzaak & Gevolg")
+        st.markdown(f"**Geselecteerde periode:** {start_date.strftime('%d-%m-%Y')} tot {end_date.strftime('%d-%m-%Y')}")
+        
+        # Check of er niet te veel klassen zijn geselecteerd voor een leesbare Sankey
+        if len(selected_klassen) > 5:
+            st.warning("⚠️ Je hebt meer dan 5 klassen geselecteerd. De Sankey grafiek kan onleesbaar worden. Overweeg je filter aan te scherpen.")
+        
+        if not df_lessons_filtered.empty:
+            fig_sankey = draw_sankey_butterfly(df_lessons_filtered)
             if fig_sankey:
                 st.plotly_chart(fig_sankey, use_container_width=True)
             else:
-                st.warning("Niet genoeg data voor Sankey.")
+                st.warning("Er zijn onvoldoende positieve/negatieve labels geregistreerd in deze periode.")
         else:
-            st.info("Geen data.")
+            st.error("Geen data beschikbaar voor de Sankey.")
