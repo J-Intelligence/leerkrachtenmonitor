@@ -593,37 +593,98 @@ elif user["role"] == "director":
         else:
             st.info("Nog geen lesregistraties beschikbaar.")
 
-    # --- TAB 2: Welzijn Team (Line Chart) ---
+    # --- TAB 2: Welzijn Team (Spectacular Design) ---
     with tab_wellbeing:
-        st.subheader("📈 Verloop Energie & Stress (Team Gemiddelde)")
-        
-        if not df_wellbeing_total.empty:
-            # GROEPEREN: Bereken het gemiddelde per datum
-            daily_avg = df_wellbeing_total.groupby("Datum")[["Energie", "Stress"]].mean().reset_index()
-            
-            # Sorteren op datum voor een correcte lijn
-            daily_avg = daily_avg.sort_values("Datum")
+        st.subheader("📈 Hartslag van het Team")
+        st.markdown("Een real-time weergave van de balans tussen draagkracht en draaglast.")
 
-            # Plotten
-            fig_trend = px.line(
-                daily_avg, 
-                x="Datum", 
-                y=["Energie", "Stress"],
-                markers=True,
-                color_discrete_map={"Energie":"#2ecc71", "Stress":"#e74c3c"}, # Groen en Rood
-                title="Gemiddeld welzijn van het team over tijd"
+        if not df_wellbeing_total.empty:
+            # 1. DATA PREP
+            daily_avg = df_wellbeing_total.groupby("Datum")[["Energie", "Stress"]].mean().reset_index()
+            daily_avg = daily_avg.sort_values("Datum")
+            
+            # We gebruiken Graph Objects (go) voor fijnere controle dan Express (px)
+            fig_trend = go.Figure()
+
+            # -------------------------------------------------------
+            # TRACE 1: ENERGIE (De 'Glow' Trace)
+            # -------------------------------------------------------
+            fig_trend.add_trace(go.Scatter(
+                x=daily_avg['Datum'], 
+                y=daily_avg['Energie'],
+                mode='lines',
+                name='Energie',
+                line=dict(color='#00E396', width=4, shape='spline', smoothing=1.3), # Neon Groen & Curved
+                fill='tozeroy', # Vul tot de bodem
+                fillcolor='rgba(0, 227, 150, 0.1)', # Heel lichte transparante vulling
+                hovertemplate="<b>Energie: %{y:.1f}</b><extra></extra>"
+            ))
+
+            # -------------------------------------------------------
+            # TRACE 2: STRESS
+            # -------------------------------------------------------
+            fig_trend.add_trace(go.Scatter(
+                x=daily_avg['Datum'], 
+                y=daily_avg['Stress'],
+                mode='lines',
+                name='Stress',
+                line=dict(color='#FF4560', width=4, shape='spline', smoothing=1.3), # Modern Rood & Curved
+                fill='tozeroy',
+                fillcolor='rgba(255, 69, 96, 0.1)', 
+                hovertemplate="<b>Stress: %{y:.1f}</b><extra></extra>"
+            ))
+
+            # -------------------------------------------------------
+            # DESIGN MAGIE (Layout)
+            # -------------------------------------------------------
+            fig_trend.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)', # Transparante achtergrond
+                plot_bgcolor='rgba(0,0,0,0)',
+                height=500,
+                hovermode="x unified", # Eén verticale lijn bij hoveren
+                xaxis=dict(
+                    showgrid=False, # Geen verticale lijnen (rustiger)
+                    showline=True,
+                    linecolor='rgba(100,100,100,0.2)',
+                    tickformat="%d %b" # Bv: "12 Okt"
+                ),
+                yaxis=dict(
+                    range=[0.5, 5.5],
+                    showgrid=True, # Wel horizontale lijnen voor leesbaarheid
+                    gridcolor='rgba(100,100,100,0.1)', # Zeer subtiel grijs
+                    zeroline=False,
+                    tickmode='array',
+                    tickvals=[1, 2, 3, 4, 5],
+                    ticktext=["1 (Laag)", "2", "3", "4", "5 (Hoog)"]
+                ),
+                legend=dict(
+                    orientation="h", # Horizontale legende
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
             )
-            
-            # Y-as vastzetten op 1 tot 5
-            fig_trend.update_layout(yaxis_range=[0.5, 5.5], xaxis_title="Datum", yaxis_title="Score (1-5)")
-            
+
+            # Voeg een "Danger Zone" band toe (Stress boven 4)
+            fig_trend.add_hrect(
+                y0=4.0, y1=5.5, 
+                fillcolor="#FF4560", opacity=0.05, 
+                line_width=0, annotation_text="⚠️ Hoge Druk Zone", annotation_position="top left"
+            )
+
             st.plotly_chart(fig_trend, use_container_width=True)
-            
-            # Extra: Data tabel tonen (inklapbaar)
-            with st.expander("Bekijk ruwe cijfers (Gemiddelden)"):
-                st.dataframe(daily_avg.style.format({"Energie": "{:.2f}", "Stress": "{:.2f}"}))
+
+            # Stijlvolle expander voor de data
+            with st.expander("🔍 Bekijk de details"):
+                st.dataframe(
+                    daily_avg.style.format({"Energie": "{:.1f}", "Stress": "{:.1f}"})
+                    .background_gradient(subset=["Energie"], cmap="Greens", vmin=1, vmax=5)
+                    .background_gradient(subset=["Stress"], cmap="Reds", vmin=1, vmax=5)
+                )
+
         else:
-            st.info("Nog geen welzijnsdata beschikbaar in Google Sheets.")
+            st.info("Nog geen data beschikbaar om te visualiseren.")
 
     # --- TAB 3: Sankey (Cultuur) ---
     with tab_culture:
