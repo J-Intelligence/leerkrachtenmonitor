@@ -687,8 +687,8 @@ elif user["role"] == "director":
     pass
     
     # ==========================================
-            # 4. PDF RAPPORT GENEREREN
-            # ==========================================
+    # 4. PDF RAPPORT GENEREREN
+    # ==========================================
             st.divider()
             
             if st.button("📄 Download Rapport (PDF)"):
