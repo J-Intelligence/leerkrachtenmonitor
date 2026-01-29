@@ -372,260 +372,152 @@ if user["role"] == "teacher":
     # TAB 2 – LESREGISTRATIE
     # -------------------------------------------------
     with tab2:
-        st.subheader("📚 Lesregistratie")
+        # We zetten dit in een functie met @st.fragment om het verspringen te voorkomen
+        @st.fragment
+        def render_lesregistratie():
+            st.subheader("📚 Lesregistratie")
 
-        # BELANGRIJK: Alles hieronder moet ingesprongen zijn onder deze regel!
-        with st.form("lesregistratie", clear_on_submit=True):
-            klas = st.selectbox("Klas", KLASSEN)
-            st.markdown("---")
+            with st.form("lesregistratie", clear_on_submit=True):
+                klas = st.selectbox("Klas", KLASSEN)
+                st.markdown("---")
 
-            # ... (Jouw sliders voor Aanpak en Management code hier) ...
-            # Ik kort het even in voor het overzicht, gebruik jouw volledige code hier
-            aanpak_opties = {1: "Stroef", 5: "Top"} # Voorbeeld
-            lesaanpak = st.slider("Lesaanpak", 1, 5, 3) 
-            klasmanagement = st.slider("Klasmanagement", 1, 5, 3)
-
-            st.markdown("---")
-            
-            # Checkboxes - Let op de inspringing! Ze staan IN de form.
-            col_pos, col_neg = st.columns(2)
-
-            with col_pos:
-                st.markdown("### ✨ Positief")
-                positief = []
-                for m in POS_MOODS:
-                    # Omdat dit IN de st.form staat, triggert dit GEEN reload bij het aanvinken
-                    if st.checkbox(m, key=f"p_{m}"):
-                        positief.append(m)
-
-            with col_neg:
-                st.markdown("### ⚠️ Aandachtspunten")
-                negatief = []
-                for m in NEG_MOODS:
-                    if st.checkbox(m, key=f"n_{m}"):
-                        negatief.append(m)
-
-            st.markdown("---")
-
-            if st.form_submit_button("Les opslaan"):
-                les_df.loc[len(les_df)] = [
-                    pd.Timestamp.now(),
-                    klas,
-                    lesaanpak,
-                    klasmanagement,
-                    ", ".join(positief),
-                    ", ".join(negatief)
-                ]
-                les_df.to_csv(LES_FILE, index=False)
-                st.success(f"Les in {klas} opgeslagen!")
+                # De beschrijvingen die je miste:
+                aanpak_opties = {1: "Stroef", 5: "Top"}
                 
-                # VERWIJDERDE REGEL: st.rerun()
-                # Nu blijft het formulier netjes staan en springt het niet weg.
-                # Omdat clear_on_submit=True in de st.form regel staat, 
-                # wordt het formulier wel leeggemaakt voor de volgende les.
+                # SLIDER 1: Lesaanpak
+                st.write(" **Hoe verliep de lesaanpak?**")
+                lesaanpak = st.slider("Schaal (1-5)", 1, 5, 3, key="slider_aanpak", label_visibility="collapsed")
+                # Hier tonen we de tekst "Stroef" en "Top" onder de slider
+                c1, c2 = st.columns([1, 1])
+                c1.caption(f"1: {aanpak_opties[1]}")
+                c2.caption(f"5: {aanpak_opties[5]}", unsafe_allow_html=True) # Rechts uitlijnen is lastig met caption, maar dit werkt prima
+                
+                st.markdown("") # Witregel
+
+                # SLIDER 2: Klasmanagement
+                st.write(" **Hoe was het klasmanagement?**")
+                klasmanagement = st.slider("Schaal (1-5)", 1, 5, 3, key="slider_mgmt", label_visibility="collapsed")
+                c3, c4 = st.columns([1, 1])
+                c3.caption(f"1: {aanpak_opties[1]}")
+                c4.caption(f"5: {aanpak_opties[5]}")
+
+                st.markdown("---")
+                
+                # Checkboxes
+                col_pos, col_neg = st.columns(2)
+
+                with col_pos:
+                    st.markdown("### ✨ Positief")
+                    positief = []
+                    for m in POS_MOODS:
+                        if st.checkbox(m, key=f"p_{m}"):
+                            positief.append(m)
+
+                with col_neg:
+                    st.markdown("### ⚠️ Aandachtspunten")
+                    negatief = []
+                    for m in NEG_MOODS:
+                        if st.checkbox(m, key=f"n_{m}"):
+                            negatief.append(m)
+
+                st.markdown("---")
+
+                # Submit knop
+                if st.form_submit_button("Les opslaan"):
+                    # Let op: we gebruiken de globale les_df. 
+                    # Zorg dat les_df goed geladen is bovenin je script.
+                    les_df.loc[len(les_df)] = [
+                        pd.Timestamp.now(),
+                        klas,
+                        lesaanpak,
+                        klasmanagement,
+                        ", ".join(positief),
+                        ", ".join(negatief)
+                    ]
+                    les_df.to_csv(LES_FILE, index=False)
+                    st.success(f"Les in {klas} opgeslagen!")
+                    # Geen st.rerun() nodig, st.fragment handelt de update af!
+
+        # Hier roepen we de functie aan om hem te tonen
+        render_lesregistratie()
     # -------------------------------------------------
     # TAB 3 – VISUALISATIES & ANALYSE
     # -------------------------------------------------
     with tab3:
         st.header("📊 Visualisaties & Analyse")
 
-        # ==========================================
-        # 1. WELLBEING TREND (ENERGIE vs RUST)
-        # ==========================================
-        st.subheader("🧘 Jouw Welzijnstrend")
+        # 1. WELLBEING TREND & FILTER (Bestaande code...)
+        # (Je bestaande code voor de grafieken hierboven laten staan)
+        # ... [Plaats hier je bestaande code voor Wellbeing Trend en Filter Logica] ...
+
+        # ... (Even ter referentie: hier stond je Lesanalyse filter code) ... 
+        # Zorg dat df_filtered beschikbaar is.
         
-        # Kopieer en verwerk datum
-        plot_df = day_df.copy()
-        plot_df["Datum"] = pd.to_datetime(plot_df["Datum"], errors="coerce")
-        plot_df = plot_df.dropna(subset=["Datum"]).sort_values("Datum")
-
-        if not plot_df.empty:
-            # BACKWARDS COMPATIBILITY:
-            # Als 'Rust' nog niet in de dataset zit (oude data), berekenen we het uit Stress.
-            if "Rust" not in plot_df.columns and "Stress" in plot_df.columns:
-                plot_df["Rust"] = 6 - plot_df["Stress"]
-
-            # We zorgen dat we zeker numeric values hebben
-            for col in ["Energie", "Rust"]:
-                if col in plot_df.columns:
-                    plot_df[col] = pd.to_numeric(plot_df[col], errors='coerce')
-
-            fig = px.line(
-                plot_df,
-                x="Datum",
-                y=["Energie", "Rust"], # Hier gebruiken we nu Rust
-                markers=True,
-                color_discrete_map={"Energie": "#2ecc71", "Rust": "#3498db"} # Groen & Blauw (Rustgevend)
-            )
-            fig.update_layout(
-                yaxis_range=[0.5, 5.5],
-                xaxis_title=None,
-                legend_title=None,
-                height=350
-            )
-            # RODE BAND (Gevarenzone) - subtiel toegevoegd zoals in dashboard
-            fig.add_hrect(y0=0, y1=2.5, fillcolor="#e74c3c", opacity=0.1, line_width=0)
-            
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Nog geen daggevoel geregistreerd.")
+        # Omdat de code hierboven niet veranderd hoeft te worden, focussen we op de Klasvergelijker.
+        # Voeg deze functie toe onderaan Tab 3 (vervang het oude blok 'Klas Vergelijker'):
 
         st.divider()
-
-        # ==========================================
-        # FILTER LOGICA (Voor Lesdata)
-        # ==========================================
-        st.subheader("🔎 Lesanalyse")
-        
-        f_col1, f_col2 = st.columns([3, 1])
-        with f_col2:
-            filter_periode = st.selectbox(
-                "📅 Periode:",
-                ["Volledig Schooljaar", "Afgelopen Maand", "Afgelopen 2 Weken"],
-                index=0
-            )
-
-        # Pas filter toe op les_df
-        les_df["Datum"] = pd.to_datetime(les_df["Datum"], errors='coerce')
-        df_filtered = les_df.copy()
-        
-        now = pd.Timestamp.now()
-        if filter_periode == "Afgelopen Maand":
-            start_date = now - pd.Timedelta(days=30)
-            df_filtered = df_filtered[df_filtered["Datum"] >= start_date]
-        elif filter_periode == "Afgelopen 2 Weken":
-            start_date = now - pd.Timedelta(days=14)
-            df_filtered = df_filtered[df_filtered["Datum"] >= start_date]
-        
-        # ==========================================
-        # 2. TOTAALOVERZICHT
-        # ==========================================
-        if not df_filtered.empty:
-            # Metrics
-            avg_aanpak = df_filtered["Lesaanpak"].mean()
-            avg_mgmt = df_filtered["Klasmanagement"].mean()
-
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Geregistreerde Lessen", len(df_filtered))
-            m2.metric("Gem. Lesaanpak", f"{avg_aanpak:.2f} / 5")
-            m3.metric("Gem. Klasmanagement", f"{avg_mgmt:.2f} / 5")
-
-            # WordCloud Generatie Functie (om later te hergebruiken)
-            def generate_wordcloud_plot(dataframe):
-                pos_s = dataframe["Positief"].dropna().astype(str).str.split(",").explode().str.strip()
-                neg_s = dataframe["Negatief"].dropna().astype(str).str.split(",").explode().str.strip()
-                
-                # Filter lege strings
-                pos_s = pos_s[pos_s.str.len() > 1]
-                neg_s = neg_s[neg_s.str.len() > 1]
-
-                all_lbls = pd.concat([
-                    pd.DataFrame({"Label": pos_s, "Type": "Positief"}),
-                    pd.DataFrame({"Label": neg_s, "Type": "Negatief"}),
-                ], ignore_index=True)
-
-                if not all_lbls.empty:
-                    counts = all_lbls.groupby(["Label", "Type"]).size().reset_index(name="Aantal")
-                    words_freq = dict(zip(counts["Label"], counts["Aantal"]))
-                    
-                    # Kleurfunctie
-                    color_map = {row["Label"]: ("#2ecc71" if row["Type"] == "Positief" else "#e74c3c") for _, row in counts.iterrows()}
-
-                    wc = WordCloud(width=800, height=350, background_color="white", random_state=42).generate_from_frequencies(words_freq)
-                    
-                    fig_wc, ax = plt.subplots(figsize=(10, 4))
-                    ax.imshow(wc.recolor(color_func=lambda word, **kwargs: color_map.get(word, "black")), interpolation="bilinear")
-                    ax.axis("off")
-                    return fig_wc
-                return None
-
-            st.write("###### ☁️ Trefwoordenwolk (Alle klassen in selectie)")
-            wc_fig = generate_wordcloud_plot(df_filtered)
-            if wc_fig:
-                st.pyplot(wc_fig)
-            else:
-                st.info("Nog niet genoeg tags voor een wordcloud.")
-
-        else:
-            st.warning("Geen data gevonden voor deze periode.")
-
-        st.divider()
-
-        # ==========================================
-        # 3. KLAS VERGELIJKER
-        # ==========================================
         st.subheader("⚔️ Vergelijk 2 Klassen")
 
-        if not les_df.empty:
-            avail_classes = sorted(les_df["Klas"].unique())
-            sel_classes = st.multiselect("Kies 2 klassen:", avail_classes, max_selections=2)
+        @st.fragment
+        def render_klas_vergelijker():
+            # We laden de data opnieuw of gebruiken de globale les_df
+            # Voor veiligheid filteren we hier lokaal even opnieuw of gebruiken we de globale df
+            local_df = les_df.copy() # Of df_filtered als die globaal beschikbaar is
+            
+            if not local_df.empty:
+                avail_classes = sorted(local_df["Klas"].unique())
+                # De multiselect triggert nu alleen een update van DIT blokje, niet de hele pagina
+                sel_classes = st.multiselect("Kies 2 klassen:", avail_classes, max_selections=2)
 
-            if len(sel_classes) == 2:
-                c1, c2 = st.columns(2)
-                
-                # Loop door de twee gekozen klassen
-                for i, (col, k_name) in enumerate(zip([c1, c2], sel_classes)):
-                    with col:
-                        st.markdown(f"### 🏫 {k_name}")
-                        
-                        # Data filteren voor deze specifieke klas + tijdsperiode
-                        subset = df_filtered[df_filtered["Klas"] == k_name]
-                        
-                        if not subset.empty:
-                            # 1. Metrics
-                            s_aanpak = subset["Lesaanpak"].mean()
-                            s_mgmt = subset["Klasmanagement"].mean()
-                            st.info(f"**Aanpak:** {s_aanpak:.1f} | **Mgmt:** {s_mgmt:.1f}")
-
-                            # 2. Mirror Density Plot (Aangepast voor smalle kolom)
-                            fig_mirror = go.Figure()
+                if len(sel_classes) == 2:
+                    c1, c2 = st.columns(2)
+                    
+                    for i, (col, k_name) in enumerate(zip([c1, c2], sel_classes)):
+                        with col:
+                            st.markdown(f"### 🏫 {k_name}")
+                            subset = local_df[local_df["Klas"] == k_name]
                             
-                            # Aanpak (Groen, Boven)
-                            fig_mirror.add_trace(go.Violin(
-                                x=subset['Lesaanpak'],
-                                y=[k_name] * len(subset),
-                                side='positive', orientation='h',
-                                line_color='#00CC96', fillcolor='#00CC96', opacity=0.6,
-                                meanline_visible=True, points=False,
-                                name="Aanpak"
-                            ))
-                            # Mgmt (Paars, Onder)
-                            fig_mirror.add_trace(go.Violin(
-                                x=subset['Klasmanagement'],
-                                y=[k_name] * len(subset),
-                                side='negative', orientation='h',
-                                line_color='#AB63FA', fillcolor='#AB63FA', opacity=0.6,
-                                meanline_visible=True, points=False,
-                                name="Mgmt"
-                            ))
+                            if not subset.empty:
+                                s_aanpak = subset["Lesaanpak"].mean()
+                                s_mgmt = subset["Klasmanagement"].mean()
+                                st.info(f"**Aanpak:** {s_aanpak:.1f} | **Mgmt:** {s_mgmt:.1f}")
 
-                            fig_mirror.update_layout(
-                                violinmode='overlay',
-                                height=250,
-                                showlegend=False,
-                                margin=dict(l=0, r=0, t=10, b=10),
-                                xaxis=dict(range=[0.5, 5.5], showgrid=True, tickvals=[1,3,5]),
-                                yaxis=dict(showticklabels=False, title=None)
-                            )
-                            st.plotly_chart(fig_mirror, use_container_width=True)
-                            
-                            # Legende kleintjes eronder
-                            st.caption("🟢 Aanpak (Boven) | 🟣 Mgmt (Onder)")
+                                # Mirror Plot
+                                fig_mirror = go.Figure()
+                                fig_mirror.add_trace(go.Violin(
+                                    x=subset['Lesaanpak'], y=[k_name] * len(subset),
+                                    side='positive', orientation='h',
+                                    line_color='#00CC96', fillcolor='#00CC96', opacity=0.6,
+                                    name="Aanpak"
+                                ))
+                                fig_mirror.add_trace(go.Violin(
+                                    x=subset['Klasmanagement'], y=[k_name] * len(subset),
+                                    side='negative', orientation='h',
+                                    line_color='#AB63FA', fillcolor='#AB63FA', opacity=0.6,
+                                    name="Mgmt"
+                                ))
+                                fig_mirror.update_layout(
+                                    violinmode='overlay', height=250, showlegend=False,
+                                    margin=dict(l=0, r=0, t=10, b=10),
+                                    xaxis=dict(range=[0.5, 5.5], showgrid=True, tickvals=[1,3,5]),
+                                    yaxis=dict(showticklabels=False)
+                                )
+                                st.plotly_chart(fig_mirror, use_container_width=True)
+                                
+                                # Wordcloud (hergebruik je generate_wordcloud_plot functie)
+                                # wc_k = generate_wordcloud_plot(subset)
+                                # if wc_k: st.pyplot(wc_k)
 
-                            # 3. WordCloud per klas
-                            st.markdown("**Tags:**")
-                            wc_k = generate_wordcloud_plot(subset)
-                            if wc_k:
-                                st.pyplot(wc_k)
                             else:
-                                st.caption("Geen tags.")
-                        
-                        else:
-                            st.warning("Geen data in deze periode.")
-            elif len(sel_classes) == 1:
-                st.info("Selecteer nog een tweede klas om te vergelijken.")
-            else:
-                st.info("Selecteer klassen via het menu hierboven.")
+                                st.warning("Geen data.")
+                elif len(sel_classes) == 1:
+                    st.info("Selecteer nog een tweede klas.")
+                else:
+                    st.info("Selecteer klassen via het menu.")
+        
+        # Roep de functie aan
+        render_klas_vergelijker()
     # -------------------------------------------------
     # TAB 4 – MAANDRAPPORT
     # -------------------------------------------------
