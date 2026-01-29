@@ -461,9 +461,15 @@ if user["role"] == "teacher":
         # Roep de functie aan
         render_lesregistratie()
 # -------------------------------------------------
-    # TAB 3 – VISUALISATIES & ANALYSE
-    # -------------------------------------------------
-    with tab3:
+# TAB 3 – VISUALISATIES & ANALYSE
+# -------------------------------------------------
+with tab3:
+    
+    # We zetten ALLES van Tab 3 in één fragment.
+    # Hierdoor zorgt de datumfilter (of eender welke andere knop in deze tab)
+    # niet meer voor een volledige herlaadactie van de pagina.
+    @st.fragment
+    def toon_tab3_inhoud():
         st.header("📊 Visualisaties & Analyse")
 
         # --- HULPFUNCTIE VOOR WORDCLOUD ---
@@ -546,6 +552,7 @@ if user["role"] == "teacher":
         # ==========================================
         st.subheader("🔎 Lesanalyse (Algemeen)")
         
+        # De filter zit nu veilig in het fragment
         f_col1, f_col2 = st.columns([3, 1])
         with f_col2:
             filter_periode = st.selectbox(
@@ -587,11 +594,12 @@ if user["role"] == "teacher":
         st.divider()
 
         # ==========================================
-        # 3. KLAS VERGELIJKER (FRAGMENT)
+        # 3. KLAS VERGELIJKER
         # ==========================================
         st.subheader("⚔️ Vergelijk 2 Klassen")
 
-        @st.fragment
+        # De extra @st.fragment hierbinnen is weggehaald, 
+        # omdat de hele functie 'toon_tab3_inhoud' al een fragment is.
         def render_klas_vergelijker():
             local_df = les_df.copy()
             
@@ -625,8 +633,8 @@ if user["role"] == "teacher":
                                     line_color='#00CC96', 
                                     fillcolor='#00CC96', 
                                     opacity=0.6,
-                                    name="Lesaanpak", # Naam voor legende
-                                    hoverinfo='skip'  # <--- GEEN HOVER MEER
+                                    name="Lesaanpak", 
+                                    hoverinfo='skip' 
                                 ))
                                 
                                 # MGMT (PAARS) - Onder
@@ -638,14 +646,14 @@ if user["role"] == "teacher":
                                     line_color='#AB63FA', 
                                     fillcolor='#AB63FA', 
                                     opacity=0.6,
-                                    name="Klasmanagement", # Naam voor legende
-                                    hoverinfo='skip' # <--- GEEN HOVER MEER
+                                    name="Klasmanagement", 
+                                    hoverinfo='skip' 
                                 ))
                                 
                                 fig_mirror.update_layout(
                                     violinmode='overlay', 
                                     height=300, 
-                                    showlegend=True, # <--- LEGENDE AAN
+                                    showlegend=True, 
                                     legend=dict(
                                         orientation="h", 
                                         yanchor="bottom", 
@@ -674,7 +682,11 @@ if user["role"] == "teacher":
                 else:
                     st.info("Selecteer klassen via het menu hierboven.")
         
-        render_klas_vergelijker()
+        # Roep de interne functie aan
+        render_klas_vergelijker() 
+
+    # --- HIER ROEP JE DE HOOFDFUNCTIE VAN TAB 3 AAN ---
+    toon_tab3_inhoud()
     # -------------------------------------------------
     # TAB 4 – MAANDRAPPORT
     # -------------------------------------------------
