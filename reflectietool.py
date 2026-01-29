@@ -933,8 +933,8 @@ elif user["role"] == "director":
             else:
                 st.info("Geen data gevonden voor deze selectie.")
 
-    # ==========================================
-    # TAB 2: WELZIJN
+   # ==========================================
+    # TAB 2: WELZIJN (DIRECTIE)
     # ==========================================
     with tab_wellbeing:
         w_col1, w_col2 = st.columns([4, 1])
@@ -942,33 +942,57 @@ elif user["role"] == "director":
         with w_col2: 
             w_choice = st.selectbox("Periode", ["Volledig schooljaar", "Afgelopen maand"], label_visibility="collapsed", key="w_filt")
 
+        # Datum filter bepalen
         if w_choice == "Afgelopen maand":
             start_w = today - pd.Timedelta(days=30)
         else:
             start_w = pd.Timestamp(year=today.year if today.month >= 9 else today.year - 1, month=9, day=1)
         
+        # Data kopiëren en filteren
         df_w = df_wellbeing_raw[df_wellbeing_raw["Datum"] >= start_w].copy()
 
         if not df_w.empty:
-            daily_avg = df_w.groupby("Datum")[["Energie", "Stress"]].mean().reset_index().sort_values("Datum")
+            # 1. Zorg dat we met 'Rust' rekenen. 
+            # Als 'Rust' niet bestaat, maar 'Stress' wel -> converteren (6 - Stress)
+            if "Rust" not in df_w.columns and "Stress" in df_w.columns:
+                df_w["Rust"] = 6 - pd.to_numeric(df_w["Stress"], errors='coerce')
+            
+            # Zeker zijn dat het getallen zijn
+            for col in ["Energie", "Rust"]:
+                if col in df_w.columns:
+                    df_w[col] = pd.to_numeric(df_w[col], errors='coerce')
+
+            # Groeperen per datum (gemiddelde van alle docenten op die dag)
+            daily_avg = df_w.groupby("Datum")[["Energie", "Rust"]].mean().reset_index().sort_values("Datum")
             
             fig_trend = go.Figure()
-            # Energie
+            
+            # LIJN 1: Energie (Groen)
             fig_trend.add_trace(go.Scatter(
                 x=daily_avg['Datum'], y=daily_avg['Energie'], mode='lines', 
                 line=dict(color='#2ecc71', width=3), showlegend=False
             ))
-            # Stress
+            
+            # LIJN 2: Rust (Blauw) - Voorheen Stress (Rood)
             fig_trend.add_trace(go.Scatter(
-                x=daily_avg['Datum'], y=daily_avg['Stress'], mode='lines', 
-                line=dict(color='#e74c3c', width=3), showlegend=False
+                x=daily_avg['Datum'], y=daily_avg['Rust'], mode='lines', 
+                line=dict(color='#3498db', width=3), showlegend=False
             ))
             
-            # Annotaties
+            # Annotaties (Labels aan het einde van de lijn)
             last_pt = daily_avg.iloc[-1]
-            fig_trend.add_annotation(x=last_pt['Datum'], y=last_pt['Energie'], text="Energie", showarrow=False, xanchor="left", xshift=10, font=dict(color="#2ecc71", size=14))
-            fig_trend.add_annotation(x=last_pt['Datum'], y=last_pt['Stress'], text="Stress", showarrow=False, xanchor="left", xshift=10, font=dict(color="#e74c3c", size=14))
+            fig_trend.add_annotation(
+                x=last_pt['Datum'], y=last_pt['Energie'], 
+                text="Energie", showarrow=False, xanchor="left", xshift=10, 
+                font=dict(color="#2ecc71", size=14)
+            )
+            fig_trend.add_annotation(
+                x=last_pt['Datum'], y=last_pt['Rust'], 
+                text="Rust", showarrow=False, xanchor="left", xshift=10, 
+                font=dict(color="#3498db", size=14)
+            )
 
+            # Layout styling
             fig_trend.update_layout(
                 height=450,
                 xaxis=dict(showgrid=False, showline=False, tickformat="%d %b"),
@@ -976,11 +1000,18 @@ elif user["role"] == "director":
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(r=80)
             )
-            # RODE BAND: Start op 3.75, opacity 0.1
-            fig_trend.add_hrect(y0=3.75, y1=5.5, fillcolor="#e74c3c", opacity=0.1, line_width=0)
+
+            # RODE BAND: Gevarenzone ONDERAAN (0 tot 2.5)
+            # Als energie of rust hierin komt, is het "code rood"
+            fig_trend.add_hrect(
+                y0=0, y1=2.5, 
+                fillcolor="#e74c3c", opacity=0.1, line_width=0,
+                annotation_text="⚠️ Let op", annotation_position="bottom right"
+            )
+
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
-            st.info("Geen data.")
+            st.info("Geen data beschikbaar voor deze periode.")
 
     # ==========================================
     # TAB 3: SANKEY
