@@ -680,11 +680,6 @@ if user["role"] == "teacher":
         # EINDE FRAGMENT DEFINITIE
         # Roep nu de hele functie aan binnen de tab
         toon_tab3_inhoud()
-
-# <--- BELANGRIJK: DEZE ELIF MOET HELEMAAL TERUG NAAR LINKS (OF HETZELFDE NIVEAU ALS IF TEACHER)
-elif user["role"] == "director":
-    # (Hier komt jouw bestaande code voor de directeur)
-    pass
     
 # -------------------------------------------------
     # TAB 4 – RAPPORT & INZICHTEN (HERSTELDE VERSIE)
@@ -851,6 +846,11 @@ elif user["role"] == "director":
                             )
                     except Exception as e:
                         st.error(f"Er ging iets mis bij het maken van de PDF: {e}")
+
+# <--- BELANGRIJK: DEZE ELIF MOET HELEMAAL TERUG NAAR LINKS (OF HETZELFDE NIVEAU ALS IF TEACHER)
+elif user["role"] == "director":
+    # (Hier komt jouw bestaande code voor de directeur)
+    pass
 # =================================================
 # =============== DIRECTIE VIEW ===================
 # =================================================
