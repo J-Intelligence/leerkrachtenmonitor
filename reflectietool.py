@@ -778,9 +778,11 @@ elif user["role"] == "director":
         # 5. PDF GENERATIE (Buiten de else, dus altijd zichtbaar)
         st.divider()
         
-        # Check of reportlab bestaat voordat we crashen
+        # Check of reportlab bestaat
         try:
-            from reportlab.platypus import SimpleDocTemplate
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.lib import colors
             pdf_available = True
         except ImportError:
             pdf_available = False
@@ -792,10 +794,11 @@ elif user["role"] == "director":
                     st.warning("Er is geen data om te exporteren.")
                 else:
                     try:
-                        # Bestandsnaam
+                        # Bestandsnaam genereren
                         clean_email = user['email'].split('@')[0]
                         report_filename = f"Rapport_{clean_email}_{date.today()}.pdf"
                         
+                        # Document opzetten
                         doc = SimpleDocTemplate(report_filename)
                         styles = getSampleStyleSheet()
                         story = []
@@ -805,13 +808,14 @@ elif user["role"] == "director":
                         story.append(Paragraph(f"Periode: {rapport_periode}", styles["Normal"]))
                         story.append(Spacer(1, 12))
 
-                        # Tekst
+                        # Tekst Analyse
                         story.append(Paragraph("<b>Inzichten</b>", styles["Heading2"]))
+                        # Newlines in markdown vervangen door <br/> voor PDF
                         clean_text = analyse_tekst.replace("**", "").replace("\n", "<br/>")
                         story.append(Paragraph(clean_text, styles["Normal"]))
                         story.append(Spacer(1, 12))
 
-                        # Tabel
+                        # Tabel met Cijfers
                         story.append(Paragraph("<b>Cijfers</b>", styles["Heading2"]))
                         data_table = [
                             ["Metric", "Score"],
@@ -821,17 +825,23 @@ elif user["role"] == "director":
                             ["Aantal lessen", str(aantal_l)]
                         ]
                         
+                        # Tabel opmaak
                         t = Table(data_table, colWidths=[200, 100])
                         t.setStyle(TableStyle([
                             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
                             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
                             ('GRID', (0, 0), (-1, -1), 1, colors.black)
                         ]))
                         story.append(t)
                         
+                        # PDF Bouwen
                         doc.build(story)
 
-                        # Download knop
+                        # Download knop tonen
                         with open(report_filename, "rb") as f:
                             st.download_button(
                                 label="📥 Download Nu",
