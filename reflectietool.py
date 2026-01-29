@@ -582,7 +582,6 @@ elif user["role"] == "director":
             st.markdown("**🏫 Klassen**")
             with st.container(height=450, border=True):
                 sel_classes_t1 = []
-                # Check of er data is voor klassen, anders lege lijst
                 if all_classes:
                     for k in all_classes:
                         if st.checkbox(f"{k}", value=True, key=f"t1_chk_{k}"):
@@ -609,7 +608,7 @@ elif user["role"] == "director":
             if not df_t1.empty:
                 
                 # -----------------------------------------------------
-                # 1. HEATMAPS (Subplots voor perfecte uitlijning)
+                # 1. HEATMAPS
                 # -----------------------------------------------------
                 st.caption("🔥 **Evolutie per Maand** (Links: Management | Rechts: Aanpak)")
                 
@@ -625,10 +624,9 @@ elif user["role"] == "director":
                         rows=1, cols=2, 
                         shared_yaxes=True, 
                         subplot_titles=("Klasmanagement", "Didactische Aanpak"),
-                        horizontal_spacing=0.02 # Minimale witruimte tussen de twee
+                        horizontal_spacing=0.02
                     )
 
-                    # Heatmap 1: Management
                     fig_heat.add_trace(go.Heatmap(
                         z=hm_mgmt.values, x=hm_mgmt.columns, y=hm_mgmt.index,
                         colorscale="RdBu", zmin=1, zmax=5, showscale=False,
@@ -636,7 +634,6 @@ elif user["role"] == "director":
                         hovertemplate="<b>Management: %{z:.1f}</b><br>Regs: %{customdata}<extra></extra>"
                     ), row=1, col=1)
 
-                    # Heatmap 2: Aanpak
                     fig_heat.add_trace(go.Heatmap(
                         z=hm_didac.values, x=hm_didac.columns, y=hm_didac.index,
                         colorscale="RdBu", zmin=1, zmax=5, showscale=False,
@@ -653,21 +650,31 @@ elif user["role"] == "director":
                     st.plotly_chart(fig_heat, use_container_width=True)
 
                 # -----------------------------------------------------
-                # 2. MIRROR DENSITY CHART (Split Violin)
+                # 2. MIRROR DENSITY CHART
                 # -----------------------------------------------------
                 st.markdown("---")
-                st.caption("🎻 **Score Verdeling** (Groen = Aanpak ⬆️ | Paars = Management ⬇️)")
+                # LEGENDE MET ECHTE KLEUREN (HTML)
+                st.markdown("""
+                <div style="margin-bottom: 10px;">
+                    <b>🎻 Score Verdeling:</b> 
+                    <span style='color: #00CC96; font-weight: bold; margin-left: 10px;'>Didactische Aanpak ⬆️</span> 
+                    &nbsp;|&nbsp; 
+                    <span style='color: #AB63FA; font-weight: bold;'>Klasmanagement ⬇️</span>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 fig_mirror = go.Figure()
 
-                # Sorteer klassen omgekeerd voor grafiek
                 sorted_classes = sorted(sel_classes_t1, reverse=True) 
 
                 for k in sorted_classes:
                     subset = df_t1[df_t1['Klas'] == k]
                     if subset.empty: continue
+                    
+                    # Bereken aantal voor de hover
+                    count_val = len(subset)
 
-                    # Deel 1: Aanpak (Positieve kant)
+                    # Deel 1: Aanpak (Positief, Groen)
                     fig_mirror.add_trace(go.Violin(
                         x=subset['Lesaanpak'],
                         y=[k] * len(subset),
@@ -678,12 +685,14 @@ elif user["role"] == "director":
                         fillcolor='#00CC96',
                         opacity=0.6,
                         meanline_visible=True,
-                        hoverinfo='y+x',
                         points=False,
-                        width=1.2 # Iets smaller zodat ze niet overlappen met de buren
+                        width=0.75, # Smaller gemaakt voor meer spatie
+                        # HOVER LOGICA: Enkel aantal
+                        customdata=[count_val] * len(subset),
+                        hovertemplate="Aantal registraties: %{customdata}<extra></extra>"
                     ))
 
-                    # Deel 2: Management (Negatieve kant)
+                    # Deel 2: Management (Negatief, Paars)
                     fig_mirror.add_trace(go.Violin(
                         x=subset['Klasmanagement'],
                         y=[k] * len(subset),
@@ -694,14 +703,15 @@ elif user["role"] == "director":
                         fillcolor='#AB63FA',
                         opacity=0.6,
                         meanline_visible=True,
-                        hoverinfo='y+x',
                         points=False,
-                        width=1.2
+                        width=0.75, # Smaller gemaakt voor meer spatie
+                        # HOVER LOGICA: Enkel aantal
+                        customdata=[count_val] * len(subset),
+                        hovertemplate="Aantal registraties: %{customdata}<extra></extra>"
                     ))
 
-                # Opmaak van de Mirror Chart
                 fig_mirror.update_layout(
-                    violinmode='overlay', # Hierdoor plakken ze tegen elkaar
+                    violinmode='overlay',
                     height=200 + (len(sorted_classes) * 50),
                     showlegend=False,
                     xaxis=dict(
@@ -709,7 +719,7 @@ elif user["role"] == "director":
                         tickvals=[1, 2, 3, 4, 5],
                         ticktext=["1 (Laag)", "2", "3", "4", "5 (Hoog)"],
                         showgrid=True,
-                        gridcolor='#eee',
+                        gridcolor='rgba(200, 200, 200, 0.15)', # Veel transparantere lijnen
                         title=None,
                         side='bottom'
                     ),
@@ -770,7 +780,8 @@ elif user["role"] == "director":
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(r=80)
             )
-            fig_trend.add_hrect(y0=4, y1=5.5, fillcolor="#e74c3c", opacity=0.03, line_width=0)
+            # RODE BAND: Start op 3.75, opacity 0.1
+            fig_trend.add_hrect(y0=3.75, y1=5.5, fillcolor="#e74c3c", opacity=0.1, line_width=0)
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
             st.info("Geen data.")
@@ -789,9 +800,12 @@ elif user["role"] == "director":
             st.markdown("**🏫 Klassen**")
             with st.container(height=450, border=True):
                 sel_classes_sankey = []
-                for k in all_classes:
-                    if st.checkbox(f"{k}", value=True, key=f"s_chk_{k}"):
-                        sel_classes_sankey.append(k)
+                if all_classes:
+                    for k in all_classes:
+                        if st.checkbox(f"{k}", value=True, key=f"s_chk_{k}"):
+                            sel_classes_sankey.append(k)
+                else:
+                    st.info("Geen data.")
 
         if s_period == "Afgelopen maand":
             start_s = today - pd.Timedelta(days=30)
