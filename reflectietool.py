@@ -938,7 +938,7 @@ elif user["role"] == "director":
     # ==========================================
     with tab_wellbeing:
         w_col1, w_col2 = st.columns([4, 1])
-        with w_col1: st.subheader("De Menselijke Maat")
+        with w_col1: st.subheader("Hoe evolueert het welbevinden van het personeel")
         with w_col2: 
             w_choice = st.selectbox("Periode", ["Volledig schooljaar", "Afgelopen maand"], label_visibility="collapsed", key="w_filt")
 
