@@ -582,9 +582,13 @@ elif user["role"] == "director":
             st.markdown("**🏫 Klassen**")
             with st.container(height=450, border=True):
                 sel_classes_t1 = []
-                for k in all_classes:
-                    if st.checkbox(f"{k}", value=True, key=f"t1_chk_{k}"):
-                        sel_classes_t1.append(k)
+                # Check of er data is voor klassen, anders lege lijst
+                if all_classes:
+                    for k in all_classes:
+                        if st.checkbox(f"{k}", value=True, key=f"t1_chk_{k}"):
+                            sel_classes_t1.append(k)
+                else:
+                    st.info("Geen klassen gevonden.")
 
         # --- LOGICA ---
         today = pd.Timestamp.today()
@@ -612,17 +616,16 @@ elif user["role"] == "director":
                 df_t1['Maand'] = df_t1['Datum'].dt.strftime('%Y-%m')
                 hm_mgmt = df_t1.pivot_table(index="Klas", columns="Maand", values="Klasmanagement", aggfunc="mean")
                 hm_didac = df_t1.pivot_table(index="Klas", columns="Maand", values="Lesaanpak", aggfunc="mean")
-                hm_count = df_t1.pivot_table(index="Klas", columns="Maand", values="Klasmanagement", aggfunc="count") # Voor hover
+                hm_count = df_t1.pivot_table(index="Klas", columns="Maand", values="Klasmanagement", aggfunc="count")
 
                 if not hm_mgmt.empty:
-                    # We gebruiken make_subplots om ze in 1 figuur te dwingen -> altijd even groot
                     from plotly.subplots import make_subplots
                     
                     fig_heat = make_subplots(
                         rows=1, cols=2, 
-                        shared_yaxes=True, # Deel de Y-as (Klaasnamen)
+                        shared_yaxes=True, 
                         subplot_titles=("Klasmanagement", "Didactische Aanpak"),
-                        horizontal_spacing=0.05
+                        horizontal_spacing=0.02 # Minimale witruimte tussen de twee
                     )
 
                     # Heatmap 1: Management
@@ -646,7 +649,6 @@ elif user["role"] == "director":
                         margin=dict(l=0, r=0, t=30, b=0),
                         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
                     )
-                    # X-assen opschonen (geen titels, wel labels)
                     fig_heat.update_xaxes(showticklabels=False) 
                     st.plotly_chart(fig_heat, use_container_width=True)
 
@@ -656,10 +658,9 @@ elif user["role"] == "director":
                 st.markdown("---")
                 st.caption("🎻 **Score Verdeling** (Groen = Aanpak ⬆️ | Paars = Management ⬇️)")
                 
-                # We bouwen één grote figuur
                 fig_mirror = go.Figure()
 
-                # Sorteer klassen omgekeerd zodat A bovenaan staat in de grafiek
+                # Sorteer klassen omgekeerd voor grafiek
                 sorted_classes = sorted(sel_classes_t1, reverse=True) 
 
                 for k in sorted_classes:
@@ -673,13 +674,13 @@ elif user["role"] == "director":
                         legendgroup='Aanpak', scalegroup='Aanpak', name='Aanpak',
                         side='positive',
                         orientation='h',
-                        line_color='#00CC96', # Helder Groen/Teal
+                        line_color='#00CC96',
                         fillcolor='#00CC96',
                         opacity=0.6,
-                        meanline_visible=True, # Toont het gemiddelde als streepje
-                        hoverinfo='y+x', # Toont klas + score
-                        points=False, # Geen puntjes voor rustig beeld
-                        width=1.5 # Maak ze wat breder/hoger
+                        meanline_visible=True,
+                        hoverinfo='y+x',
+                        points=False,
+                        width=1.2 # Iets smaller zodat ze niet overlappen met de buren
                     ))
 
                     # Deel 2: Management (Negatieve kant)
@@ -689,28 +690,28 @@ elif user["role"] == "director":
                         legendgroup='Management', scalegroup='Management', name='Management',
                         side='negative',
                         orientation='h',
-                        line_color='#AB63FA', # Helder Paars
+                        line_color='#AB63FA',
                         fillcolor='#AB63FA',
                         opacity=0.6,
                         meanline_visible=True,
                         hoverinfo='y+x',
                         points=False,
-                        width=1.5
+                        width=1.2
                     ))
 
                 # Opmaak van de Mirror Chart
                 fig_mirror.update_layout(
-                    violinmode='overlay', # Cruciaal: zorgt dat ze tegen elkaar plakken
-                    gap=0,
-                    height=200 + (len(sorted_classes) * 50), # Rek de hoogte uit per klas
-                    showlegend=False, # Legenda is niet nodig door de caption en kleuren
+                    violinmode='overlay', # Hierdoor plakken ze tegen elkaar
+                    height=200 + (len(sorted_classes) * 50),
+                    showlegend=False,
                     xaxis=dict(
-                        range=[0.5, 5.5], # Vaste schaal 1-5
+                        range=[0.5, 5.5],
                         tickvals=[1, 2, 3, 4, 5],
                         ticktext=["1 (Laag)", "2", "3", "4", "5 (Hoog)"],
                         showgrid=True,
                         gridcolor='#eee',
-                        title=None
+                        title=None,
+                        side='bottom'
                     ),
                     yaxis=dict(
                         showgrid=False,
