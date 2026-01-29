@@ -10,6 +10,165 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from streamlit_gsheets import GSheetsConnection
 
+# --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
+def load_all_school_data():
+    """Laadt alle CSV's uit de map, voegt ze samen en verwijdert namen."""
+    all_lessons = []
+    all_days = []
+    
+    # 1. Alle lesbestanden samenvoegen
+    lesson_files = glob.glob(f"{DATA_DIR}/*_lessons.csv")
+    for f in lesson_files:
+        try:
+            df = pd.read_csv(f)
+            all_lessons.append(df)
+        except:
+            pass
+            
+    # 2. Alle dagbestanden samenvoegen
+    day_files = glob.glob(f"{DATA_DIR}/*_day.csv")
+    for f in day_files:
+        try:
+            df = pd.read_csv(f)
+            all_days.append(df)
+        except:
+            pass
+
+    # Samenvoegen (indien data aanwezig)
+    df_lessons_total = pd.concat(all_lessons, ignore_index=True) if all_lessons else pd.DataFrame()
+    df_days_total = pd.concat(all_days, ignore_index=True) if all_days else pd.DataFrame()
+    
+    return df_days_total, df_lessons_total
+
+import plotly.colors as pc
+
+def draw_ridgeline_artistic(df, kolom, titel, basis_kleur_naam="Teal"):
+    """
+    Maakt een 'Joyplot' met overlappende 'bergen' en een gradiënt.
+    """
+    if df.empty: return None
+    
+    klassen = sorted(df["Klas"].unique(), reverse=True)
+    fig = go.Figure()
+
+    # Genereer een kleurenpalet op basis van het aantal klassen
+    # We pakken een spectrum (bijv. Teal of Sunset)
+    colors = px.colors.sample_colorscale(basis_kleur_naam, [n/(len(klassen)) for n in range(len(klassen))])
+
+    for i, klas in enumerate(klassen):
+        df_k = df[df["Klas"] == klas]
+        
+        fig.add_trace(go.Violin(
+            x=df_k[kolom],
+            y=[klas] * len(df_k),
+            name=klas,
+            side='positive', 
+            orientation='h', 
+            width=2.5,  # Breder = meer overlap = mooier effect
+            line_color='white', # Witte rand maakt het 'clean'
+            line_width=1,
+            fillcolor=colors[i], # Gradiënt kleur
+            opacity=0.8,
+            points=False,
+            meanline_visible=False # Geen harde lijnen
+        ))
+
+    fig.update_layout(
+        title=dict(text=titel, font=dict(size=20, family="Arial", color="#333")),
+        xaxis_title=None,
+        yaxis_title=None,
+        showlegend=False,
+        height=120 + (len(klassen) * 40),
+        margin=dict(l=0, r=0, t=50, b=20),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(range=[0.5, 5.5], showgrid=False, zeroline=False, visible=True),
+        yaxis=dict(showgrid=False, showline=False, showticklabels=True)
+    )
+    return fig
+
+def draw_sankey_butterfly(df):
+    """
+    Creëert een Butterfly Sankey: Negatief (links) -> Klassen (midden) -> Positief (rechts).
+    """
+    if df.empty: return None
+    
+    # 1. Data Voorbereiding
+    def clean_labels(df, kolom):
+        temp = df.copy()
+        temp[kolom] = temp[kolom].astype(str).str.split(',')
+        temp = temp.explode(kolom)
+        temp[kolom] = temp[kolom].str.strip()
+        return temp[(temp[kolom] != 'nan') & (temp[kolom] != '')]
+
+    df_pos = clean_labels(df, 'Positief')
+    df_neg = clean_labels(df, 'Negatief')
+
+    counts_pos = df_pos.groupby(['Klas', 'Positief']).size().reset_index(name='Aantal')
+    counts_neg = df_neg.groupby(['Negatief', 'Klas']).size().reset_index(name='Aantal')
+
+    # 2. Nodes bepalen (Negatief -> Klassen -> Positief)
+    neg_uniek = sorted(list(counts_neg['Negatief'].unique()))
+    klassen_uniek = sorted(list(df['Klas'].unique()))
+    pos_uniek = sorted(list(counts_pos['Positief'].unique()))
+    
+    all_nodes = neg_uniek + klassen_uniek + pos_uniek
+    node_map = {name: i for i, name in enumerate(all_nodes)}
+
+    # 3. Kleuren voor de Nodes
+    # Roodachtig voor negatief, Grijs voor klassen, Groenachtig voor positief
+    node_colors = (["#ff7675"] * len(neg_uniek) + 
+                   ["#636e72"] * len(klassen_uniek) + 
+                   ["#55efc4"] * len(pos_uniek))
+
+    # 4. Links opbouwen
+    sources = []
+    targets = []
+    values = []
+    link_colors = []
+
+    # Negatief -> Klas (Links naar Midden)
+    for _, row in counts_neg.iterrows():
+        sources.append(node_map[row['Negatief']])
+        targets.append(node_map[row['Klas']])
+        values.append(row['Aantal'])
+        link_colors.append("rgba(214, 48, 49, 0.3)") # Transparant rood
+
+    # Klas -> Positief (Midden naar Rechts)
+    for _, row in counts_pos.iterrows():
+        sources.append(node_map[row['Klas']])
+        targets.append(node_map[row['Positief']])
+        values.append(row['Aantal'])
+        link_colors.append("rgba(0, 184, 148, 0.3)") # Transparant groen
+
+    # 5. Dynamische Hoogte
+    dynamic_height = max(600, len(all_nodes) * 35)
+
+    fig = go.Figure(data=[go.Sankey(
+        textfont=dict(size=13, color="black", family="Arial Black"),
+        node = dict(
+          pad = 35, thickness = 20,
+          line = dict(color = "white", width = 1),
+          label = [f" {n} " for n in all_nodes],
+          color = node_colors
+        ),
+        link = dict(
+          source = sources,
+          target = targets,
+          value = values,
+          color = link_colors
+        )
+    )])
+
+    fig.update_layout(
+        title=dict(text="⚖️ Balans per Klas: Negatief vs Positief", font=dict(size=22)),
+        height=dynamic_height,
+        font=dict(size=12),
+        margin=dict(l=40, r=40, t=80, b=40),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    return fig
 # -------------------------------------------------
 # CONFIG
 # -------------------------------------------------
