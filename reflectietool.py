@@ -686,7 +686,75 @@ elif user["role"] == "director":
     # (Hier komt jouw bestaande code voor de directeur)
     pass
     
-    # ==========================================
+# -------------------------------------------------
+    # TAB 4 – RAPPORT & INZICHTEN
+    # -------------------------------------------------
+    with tab4:
+        st.header("📑 Persoonlijk Rapport & Analyse")
+        
+        # 1. SELECTIE PERIODE
+        r_col1, r_col2 = st.columns([2, 1])
+        with r_col1:
+            rapport_periode = st.selectbox(
+                "📅 Selecteer periode:",
+                ["Laatste 2 weken", "Laatste 30 dagen", "Huidig Schooljaar"],
+                index=1
+            )
+        
+        # Data filteren op basis van selectie
+        now = pd.Timestamp.now()
+        start_date = now # fallback
+        
+        if rapport_periode == "Laatste 2 weken":
+            start_date = now - pd.Timedelta(days=14)
+        elif rapport_periode == "Laatste 30 dagen":
+            start_date = now - pd.Timedelta(days=30)
+        elif rapport_periode == "Huidig Schooljaar":
+            if now.month < 9:
+                start_date = pd.Timestamp(year=now.year - 1, month=9, day=1)
+            else:
+                start_date = pd.Timestamp(year=now.year, month=9, day=1)
+
+        # Filter de dataframes
+        r_day_df = day_df[day_df["Datum"] >= start_date].copy()
+        r_les_df = les_df[les_df["Datum"] >= start_date].copy()
+
+        # Variabelen initialiseren voor PDF (zodat ze altijd bestaan)
+        gem_en = 0
+        gem_str = 0
+        gem_les = 0
+        aantal_l = 0
+        analyse_tekst = "Geen data beschikbaar."
+
+        if r_day_df.empty and r_les_df.empty:
+            st.info("Geen gegevens gevonden voor deze periode.")
+        else:
+            # 2. ANALYSE GENEREREN
+            gem_en = r_day_df["Energie"].mean() if not r_day_df.empty else 0
+            gem_str = r_day_df["Stress"].mean() if not r_day_df.empty else 0
+            gem_les = r_les_df["Lesaanpak"].mean() if not r_les_df.empty else 0
+            aantal_l = len(r_les_df)
+
+            # Simpele analyse logica (inkorten voor overzicht)
+            feedback = []
+            if gem_en > 3.8: feedback.append("🚀 Je energiepeil is hoog.")
+            elif gem_en < 2.5: feedback.append("🔋 Je energie is laag.")
+            if gem_str > 3.5: feedback.append("🤯 Je stressniveau is hoog.")
+            if not feedback: feedback.append("Je bent stabiel bezig.")
+            
+            analyse_tekst = "\n".join(feedback)
+
+            with st.expander("🤖 Bekijk Analyse", expanded=True):
+                st.markdown(analyse_tekst)
+
+            # 3. DASHBOARD VISUALS (KPIs)
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Energie", f"{gem_en:.1f}")
+            k2.metric("Stress", f"{gem_str:.1f}")
+            k3.metric("Lesaanpak", f"{gem_les:.1f}")
+            k4.metric("Aantal Lessen", antal_l)
+
+            # ==========================================
             # 4. PDF RAPPORT GENEREREN
             # ==========================================
             st.divider()
@@ -703,7 +771,6 @@ elif user["role"] == "director":
 
                 story.append(Paragraph("<b>📊 Analyse & Inzichten</b>", styles["Heading2"]))
                 
-                # Markdown ** verwijderen voor PDF
                 clean_text = analyse_tekst.replace("**", "")
                 for line in clean_text.split("\n"):
                     if line.strip():
@@ -711,7 +778,6 @@ elif user["role"] == "director":
                         story.append(Spacer(1, 6))
                 
                 story.append(Spacer(1, 12))
-
                 story.append(Paragraph("<b>📈 Cijferoverzicht</b>", styles["Heading2"]))
                 
                 data_table = [
@@ -744,16 +810,13 @@ elif user["role"] == "director":
                         mime="application/pdf"
                     )
 
-# --- LET OP: DEZE MOET HELEMAAL TEGEN DE LINKERKANTLIJN STAAN ---
-elif user["role"] == "director":
-    st.title("Directie Dashboard")
-    # Hier komt de code voor de directeur...
-    pass
 # =================================================
 # =============== DIRECTIE VIEW ===================
 # =================================================
+# Let op: Deze elif staat HELEMAAL links tegen de kantlijn
 elif user["role"] == "director":
-    st.header("🎓 Directie Dashboard")
+    st.title("Directie Dashboard")
+    # ... jouw code ...
 
     # ---------------------------------------------------------
     # STAP 1: DATA LADEN
