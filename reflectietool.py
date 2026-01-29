@@ -681,6 +681,7 @@ if user["role"] == "teacher":
 elif user["role"] == "director":
     # (Hier komt jouw bestaande code voor de directeur)
     pass
+    
     # -------------------------------------------------
     # TAB 4 – RAPPORT & INZICHTEN
     # -------------------------------------------------
