@@ -730,6 +730,36 @@ if user["role"] == "teacher":
 
         # 2. DATA VOORBEREIDING
         # ---------------------
+        
+        # A. GLOBALE DATA LADEN (BENCHMARK)
+        # We moeten alle data inladen om het gemiddelde van "alle leerkrachten" te weten
+        try:
+            # Pas bestandsnamen aan als ze anders heten in jouw project
+            benchmark_day_df = pd.read_csv("dag_check_db.csv") 
+            benchmark_les_df = pd.read_csv("les_db.csv")
+            
+            # Zeker zijn dat het numeriek is
+            for col in ["Energie", "Stress"]:
+                if col in benchmark_day_df.columns:
+                    benchmark_day_df[col] = pd.to_numeric(benchmark_day_df[col], errors='coerce')
+            
+            for col in ["Lesaanpak", "Klasmanagement"]:
+                if col in benchmark_les_df.columns:
+                    benchmark_les_df[col] = pd.to_numeric(benchmark_les_df[col], errors='coerce')
+                    
+        except FileNotFoundError:
+            st.warning("Kan globale database niet vinden voor benchmark. Vergelijking is tijdelijk uitgeschakeld.")
+            benchmark_day_df = pd.DataFrame()
+            benchmark_les_df = pd.DataFrame()
+
+        # BEREKEN GLOBALE GEMIDDELDEN (Benchmark over ALLE leerkrachten)
+        glob_avg_en = benchmark_day_df["Energie"].mean() if not benchmark_day_df.empty else 0
+        glob_avg_str = benchmark_day_df["Stress"].mean() if not benchmark_day_df.empty else 0
+        glob_avg_les = benchmark_les_df["Lesaanpak"].mean() if not benchmark_les_df.empty else 0
+        glob_avg_mng = benchmark_les_df["Klasmanagement"].mean() if not benchmark_les_df.empty else 0
+
+
+        # B. PERSOONLIJKE DATA FILTEREN
         now = pd.Timestamp.now()
         start_date = now 
         
@@ -740,9 +770,10 @@ if user["role"] == "teacher":
         elif rapport_periode == "Huidig Schooljaar":
             start_date = pd.Timestamp(year=now.year - 1 if now.month < 9 else now.year, month=9, day=1)
 
-        # A. Data Ophalen & Filteren
-        r_day_df = day_df.copy() if 'day_df' in locals() else pd.DataFrame(columns=["Datum", "Energie", "Stress"])
-        r_les_df = les_df.copy() if 'les_df' in locals() else pd.DataFrame(columns=["Datum", "Klas", "Lesaanpak", "Klasmanagement"])
+        # Ophalen uit de sessie data (die al gefilterd is op de ingelogde gebruiker in 'day_df' en 'les_df')
+        # We gebruiken hier globals check of locals om crashes te voorkomen
+        r_day_df = day_df.copy() if 'day_df' in globals() or 'day_df' in locals() else pd.DataFrame(columns=["Datum", "Energie", "Stress"])
+        r_les_df = les_df.copy() if 'les_df' in globals() or 'les_df' in locals() else pd.DataFrame(columns=["Datum", "Klas", "Lesaanpak", "Klasmanagement"])
 
         if not r_day_df.empty: 
             r_day_df["Datum"] = pd.to_datetime(r_day_df["Datum"])
@@ -752,62 +783,63 @@ if user["role"] == "teacher":
             r_les_df["Datum"] = pd.to_datetime(r_les_df["Datum"])
             r_les_df = r_les_df[r_les_df["Datum"] >= start_date]
 
-        # B. Data Mergen & Variabelen Maken (Rust)
-        merged_df = pd.DataFrame()
-        has_correlation_data = False
-        
-        if not r_les_df.empty and not r_day_df.empty:
-            merged_df = pd.merge(r_les_df, r_day_df, on="Datum", how="inner")
-            if len(merged_df) > 2: # Minimaal 3 punten nodig voor iets zinnigs
-                # Variabele 'Rust' aanmaken (Invers van Stress op schaal 1-5)
-                # Formule: 6 - Stress. (Bijv: Stress 5 -> Rust 1. Stress 1 -> Rust 5)
-                merged_df["Rust"] = 6 - merged_df["Stress"]
-                has_correlation_data = True
-
-        # C. Metrics Berekenen (Gemiddelden)
+        # C. Metrics Berekenen (Jouw Gemiddelden in deze periode)
         gem_en = r_day_df["Energie"].mean() if not r_day_df.empty else 0
         gem_str = r_day_df["Stress"].mean() if not r_day_df.empty else 0
         gem_les = r_les_df["Lesaanpak"].mean() if not r_les_df.empty else 0
         gem_mng = r_les_df["Klasmanagement"].mean() if not r_les_df.empty else 0
         aantal_l = len(r_les_df)
-        
-        # Benchmark (All-time)
-        all_time_en = day_df["Energie"].mean() if not day_df.empty else 0
-        all_time_str = day_df["Stress"].mean() if not day_df.empty else 0
-        all_time_les = les_df["Lesaanpak"].mean() if not les_df.empty else 0
 
-        # Helper voor tekst (Delta)
-        def get_delta_text(current, historical, reverse=False):
-            if historical == 0: return "-"
-            diff = current - historical
-            return f"{diff:+.1f} vs gem."
+        # Helper voor tekst (Delta) vs Benchmark
+        def get_delta_text(current, benchmark, reverse=False):
+            if benchmark == 0: return "-"
+            diff = current - benchmark
+            # Als reverse True is (bijv Stress), is een negatief getal goed, maar streamlits metric component snapt dat zelf
+            # We tonen hier puur het verschil
+            return f"{diff:+.1f} vs alle leerkrachten"
 
         # 3. DASHBOARD WEERGAVE (KPI's)
         # -----------------------------
+        st.markdown("### 📊 Jouw prestaties vs. Het Gemiddelde")
+        
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Gem. Energie", f"{gem_en:.1f}", get_delta_text(gem_en, all_time_en))
-        # Voor stress: Negatief verschil is groen (beter), dus delta_color="inverse"
-        k2.metric("Gem. Stress", f"{gem_str:.1f}", get_delta_text(gem_str, all_time_str, reverse=True), delta_color="inverse")
-        k3.metric("Gem. Lesaanpak", f"{gem_les:.1f}", get_delta_text(gem_les, all_time_les))
-        k4.metric("Geregistreerde Lessen", aantal_l)
+        
+        # Energie: Hoger is beter
+        k1.metric("Gem. Energie", f"{gem_en:.1f}", get_delta_text(gem_en, glob_avg_en))
+        
+        # Stress: Lager is beter (dus delta_color='inverse' zorgt dat -0.5 groen wordt en +0.5 rood)
+        k2.metric("Gem. Stress", f"{gem_str:.1f}", get_delta_text(gem_str, glob_avg_str, reverse=True), delta_color="inverse")
+        
+        # Lesaanpak: Hoger is beter
+        k3.metric("Gem. Lesaanpak", f"{gem_les:.1f}", get_delta_text(gem_les, glob_avg_les))
+        
+        # Klasmanagement: Hoger is beter
+        k4.metric("Gem. Management", f"{gem_mng:.1f}", get_delta_text(gem_mng, glob_avg_mng))
 
+        st.caption(f"*Vergelijking gebaseerd op data van alle leerkrachten in de database.")
         st.divider()
 
-        # 4. CORRELATIE MATRIX OP HET SCHERM
+        # 4. DATA MERGEN VOOR CORRELATIES
         # ----------------------------------
+        merged_df = pd.DataFrame()
+        has_correlation_data = False
+        
+        if not r_les_df.empty and not r_day_df.empty:
+            merged_df = pd.merge(r_les_df, r_day_df, on="Datum", how="inner")
+            if len(merged_df) > 2: 
+                merged_df["Rust"] = 6 - merged_df["Stress"]
+                has_correlation_data = True
+
+        # 5. CORRELATIE MATRIX & INZICHTEN
         c_col1, c_col2 = st.columns([1, 1])
         
         with c_col1:
-            st.subheader("🔍 Correlatie Matrix")
-            st.caption("Hoe beïnvloeden deze factoren elkaar? (Rood = samenhang, Blauw = tegenpolen)")
+            st.subheader("🔍 Samenhang (Correlaties)")
+            st.caption("Rood = Sterk verband. Blauw = Tegenpolen.")
             
             if has_correlation_data:
                 import seaborn as sns
-                
-                # Selecteer alleen de relevante kolommen voor de matrix
                 corr_data = merged_df[["Klasmanagement", "Lesaanpak", "Energie", "Rust"]].corr()
-                
-                # Plot
                 fig_corr, ax_corr = plt.subplots(figsize=(5, 4))
                 sns.heatmap(corr_data, annot=True, cmap="coolwarm", vmin=-1, vmax=1, center=0, 
                             fmt=".2f", linewidths=0.5, ax=ax_corr, cbar=False)
@@ -818,32 +850,27 @@ if user["role"] == "teacher":
         with c_col2:
             st.subheader("💡 Inzichten")
             if has_correlation_data:
-                # Automatische analyse van de sterkste correlatie (exclusief diagonaal)
                 corr_matrix = corr_data.copy()
-                np.fill_diagonal(corr_matrix.values, 0) # Diagonaal negeren
-                
-                # Vind max waarde en bijbehorende labels
+                np.fill_diagonal(corr_matrix.values, 0)
                 max_val = corr_matrix.max().max()
                 row_idx, col_idx = np.unravel_index(corr_matrix.values.argmax(), corr_matrix.values.shape)
                 var1, var2 = corr_matrix.columns[row_idx], corr_matrix.columns[col_idx]
                 
                 st.write(f"**Sterkste verband:**")
-                st.info(f"Er is een sterke positieve link ({max_val:.2f}) gevonden tussen **{var1}** en **{var2}**. Wanneer de één stijgt, stijgt de ander vaak mee.")
+                st.info(f"Er is een sterke positieve link ({max_val:.2f}) gevonden tussen **{var1}** en **{var2}**.")
                 
-                st.write("**Wat betekent dit?**")
+                st.write("**Betekenis:**")
                 st.markdown("""
-                * **Energie & Klasmanagement:** Fit zijn helpt om de klas in de hand te houden.
-                * **Rust & Lesaanpak:** Een kalm hoofd zorgt vaak voor betere didactiek.
-                * **Klasmanagement & Lesaanpak:** Orde is de basis voor goed lesgeven.
+                * **Energie & Management:** Fit zijn helpt om de klas in de hand te houden.
+                * **Rust & Aanpak:** Een kalm hoofd zorgt vaak voor betere didactiek.
                 """)
             else:
-                st.write("Zodra je meer data invoert (zowel dag-checks als lessen op dezelfde dagen), verschijnen hier automatisch verbanden.")
+                st.write("Vul meer data in op dezelfde dagen om hier automatische inzichten te krijgen.")
 
-        # 5. PDF RAPPORT GENEREREN
+        # 6. PDF RAPPORT GENEREREN
         # ------------------------
         st.divider()
         
-        # Imports check
         try:
             import io
             from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
@@ -859,24 +886,19 @@ if user["role"] == "teacher":
             def generate_pdf():
                 buffer = io.BytesIO()
                 
-                # 1. Functie om plots om te zetten
                 def plot_to_img(fig):
                     img_buf = io.BytesIO()
                     fig.savefig(img_buf, format='png', dpi=120, bbox_inches='tight')
                     img_buf.seek(0)
                     return ReportLabImage(img_buf, width=400, height=220)
 
-                # 2. Naam Opschonen (johan.jouck -> Johan Jouck)
-                raw_name = user['email'].split('@')[0] # johan.jouck
-                # Vervang punt door spatie en maak Title Case
+                raw_name = user['email'].split('@')[0]
                 clean_name = raw_name.replace('.', ' ').title() 
                 
-                # 3. Document Opzet
                 doc = SimpleDocTemplate(buffer)
                 styles = getSampleStyleSheet()
                 story = []
                 
-                # Styles
                 title_style = styles["Title"]
                 title_style.textColor = colors.HexColor("#2c3e50")
                 h2_style = styles["Heading2"]
@@ -884,23 +906,25 @@ if user["role"] == "teacher":
                 h2_style.spaceBefore = 15
 
                 # HEADER
-                story.append(Paragraph("Docenten Monitor: Analyse Rapport", title_style))
-                story.append(Paragraph(f"<b>Docent:</b> {clean_name}<br/><b>Periode:</b> {rapport_periode}", styles["Normal"]))
+                story.append(Paragraph("Leerkrachten Monitor: Analyse Rapport", title_style))
+                story.append(Paragraph(f"<b>Leerkracht:</b> {clean_name}<br/><b>Periode:</b> {rapport_periode}", styles["Normal"]))
                 story.append(Spacer(1, 20))
 
                 # SECTIE 1: Kerncijfers
-                story.append(Paragraph("1. Kerncijfers & Benchmark", h2_style))
+                story.append(Paragraph("1. Jouw Score vs. Gemiddelde Leerkracht", h2_style))
+                story.append(Paragraph("In deze tabel vergelijken we jouw gemiddelden van de gekozen periode met het gemiddelde van alle leerkrachten in het systeem.", styles["Normal"]))
+                story.append(Spacer(1, 10))
                 
-                # Tabel data
+                # Tabel data - AANGEPAST NAAR GLOBAL BENCHMARK
                 tbl_data = [
-                    ["Indicator", "Jouw Score", "Jouw Historisch Gem.", "Verschil"],
-                    ["Energie", f"{gem_en:.1f}", f"{all_time_en:.1f}", get_delta_text(gem_en, all_time_en)],
-                    ["Stress", f"{gem_str:.1f}", f"{all_time_str:.1f}", get_delta_text(gem_str, all_time_str, reverse=True)],
-                    ["Lesaanpak", f"{gem_les:.1f}", f"{all_time_les:.1f}", get_delta_text(gem_les, all_time_les)],
-                    ["Klasmanagement", f"{gem_mng:.1f}", "-", "-"],
+                    ["Indicator", "Jouw Score", "Gem. Alle Leerkrachten", "Verschil"],
+                    ["Energie", f"{gem_en:.1f}", f"{glob_avg_en:.1f}", get_delta_text(gem_en, glob_avg_en)],
+                    ["Stress", f"{gem_str:.1f}", f"{glob_avg_str:.1f}", get_delta_text(gem_str, glob_avg_str, reverse=True)],
+                    ["Lesaanpak", f"{gem_les:.1f}", f"{glob_avg_les:.1f}", get_delta_text(gem_les, glob_avg_les)],
+                    ["Klasmanagement", f"{gem_mng:.1f}", f"{glob_avg_mng:.1f}", get_delta_text(gem_mng, glob_avg_mng)],
                 ]
                 
-                t = Table(tbl_data, colWidths=[120, 100, 120, 100])
+                t = Table(tbl_data, colWidths=[120, 100, 140, 100])
                 t.setStyle(TableStyle([
                     ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#34495e")),
                     ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -912,15 +936,9 @@ if user["role"] == "teacher":
                 story.append(t)
                 story.append(Spacer(1, 20))
 
-                # SECTIE 2: Correlatie Matrix
-                story.append(Paragraph("2. Correlatie Matrix: De Verbanden", h2_style))
+                # SECTIE 2: Correlaties
+                story.append(Paragraph("2. Samenhang & Patronen", h2_style))
                 if has_correlation_data:
-                    story.append(Paragraph(
-                        "Onderstaande matrix toont de samenhang tussen Energie, Rust, Lesaanpak en Klasmanagement. "
-                        "Rood (dichter bij 1) betekent een sterk positief verband.", styles["Normal"]))
-                    story.append(Spacer(1, 10))
-                    
-                    # Opnieuw plotten voor PDF (schoner formaat)
                     fig_pdf_corr, ax_pdf_corr = plt.subplots(figsize=(6, 4))
                     sns.heatmap(merged_df[["Klasmanagement", "Lesaanpak", "Energie", "Rust"]].corr(), 
                                 annot=True, cmap="coolwarm", vmin=-1, vmax=1, center=0, 
@@ -951,7 +969,6 @@ if user["role"] == "teacher":
                 buffer.seek(0)
                 return buffer
 
-            # DIRECT DOWNLOADEN (Geen dubbele klik)
             pdf_data = generate_pdf()
             clean_filename = f"Rapport_{user['email'].split('@')[0].replace('.', '_')}.pdf"
             
