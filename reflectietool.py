@@ -129,25 +129,41 @@ if user["role"] == "teacher":
 
     LES_FILE = lesson_file(user["email"])
 
-    # Google Sheets Verbinding voor Daggevoel
+    # 1. Google Sheets Verbinding (Zorg dat secrets zijn ingesteld!)
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Laden van data uit Google Sheets
+    # 2. Laden van data uit Google Sheets met TTL=0 (geen cache)
     try:
-        all_day_data = conn.read(spreadsheet=SHEET_URL)
-        # Filteren zodat je alleen je eigen data ziet
-        if "Email" in all_day_data.columns:
-            day_df = all_day_data[all_day_data["Email"] == user["email"]].copy()
+        # We halen de data op. ttl=0 zorgt dat we ALTIJD de nieuwste versie zien.
+        all_day_data = conn.read(spreadsheet=SHEET_URL, ttl=0)
+        
+        if not all_day_data.empty and "Email" in all_day_data.columns:
+            # Filter op e-mail (case-insensitive en zonder spaties)
+            day_df = all_day_data[all_day_data["Email"].str.strip().str.lower() == user["email"].lower()].copy()
+            
+            # CRUCIAAL: Zet kolommen om naar de juiste types
+            # Als dit niet gebeurt, tekent de grafiek in Tab 3 niets!
+            day_df["Datum"] = pd.to_datetime(day_df["Datum"], errors="coerce")
+            day_df["Energie"] = pd.to_numeric(day_df["Energie"], errors="coerce")
+            day_df["Stress"] = pd.to_numeric(day_df["Stress"], errors="coerce")
+            
+            # Verwijder rijen waar de conversie mislukt is
+            day_df = day_df.dropna(subset=["Datum", "Energie", "Stress"])
         else:
             day_df = pd.DataFrame(columns=["Email", "Datum", "Energie", "Stress"])
-    except:
+    except Exception as e:
+        st.error(f"Fout bij verbinding met Google Sheets: {e}")
         day_df = pd.DataFrame(columns=["Email", "Datum", "Energie", "Stress"])
         all_day_data = day_df
 
+    # 3. Lokale Lesregistratie laden
     if not os.path.exists(LES_FILE):
         pd.DataFrame(columns=["Datum","Klas","Lesaanpak","Klasmanagement","Positief","Negatief"]).to_csv(LES_FILE, index=False)
 
     les_df = pd.read_csv(LES_FILE)
+    # Ook hier datum omzetten voor de zekerheid
+    if not les_df.empty:
+        les_df["Datum"] = pd.to_datetime(les_df["Datum"], errors="coerce")
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "🧠 Daggevoel",
