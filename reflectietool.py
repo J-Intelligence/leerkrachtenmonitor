@@ -681,172 +681,157 @@ if user["role"] == "teacher":
         # Roep nu de hele functie aan binnen de tab
         toon_tab3_inhoud()
     
-# -------------------------------------------------
-    # TAB 4 – RAPPORT & INZICHTEN (HERSTELDE VERSIE)
-    # -------------------------------------------------
-    with tab4:
-        st.header("📑 Persoonlijk Rapport & Analyse")
-        
-        # DEBUG CHECK: Zie je deze tekst? Dan werkt de tab zelf wel.
-        # st.write("Debug: Tab 4 wordt geladen...") 
-
-        # 1. SELECTIE PERIODE
-        r_col1, r_col2 = st.columns([2, 1])
-        with r_col1:
-            rapport_periode = st.selectbox(
-                "📅 Selecteer periode:",
-                ["Laatste 2 weken", "Laatste 30 dagen", "Huidig Schooljaar"],
-                index=1,
-                key="rep_periode_select"
-            )
-        
-        # 2. DATA FILTEREN
-        now = pd.Timestamp.now()
-        start_date = now # fallback
-        
-        if rapport_periode == "Laatste 2 weken":
-            start_date = now - pd.Timedelta(days=14)
-        elif rapport_periode == "Laatste 30 dagen":
-            start_date = now - pd.Timedelta(days=30)
-        elif rapport_periode == "Huidig Schooljaar":
-            if now.month < 9:
-                start_date = pd.Timestamp(year=now.year - 1, month=9, day=1)
-            else:
-                start_date = pd.Timestamp(year=now.year, month=9, day=1)
-
-        # Filter de dataframes (met veilige kopie)
-        if 'day_df' in locals() and not day_df.empty:
-            r_day_df = day_df[day_df["Datum"] >= start_date].copy()
-        else:
-            r_day_df = pd.DataFrame(columns=["Email", "Datum", "Energie", "Stress"])
-
-        if 'les_df' in locals() and not les_df.empty:
-            r_les_df = les_df[les_df["Datum"] >= start_date].copy()
-        else:
-            r_les_df = pd.DataFrame(columns=["Klas", "Lesaanpak", "Klasmanagement"])
-
-        # 3. VARIABELEN INITIALISEREN (Belangrijk tegen crashes!)
-        gem_en = 0.0
-        gem_str = 0.0
-        gem_les = 0.0
-        aantal_l = 0
-        analyse_tekst = "Er is nog onvoldoende data in deze periode om een analyse te maken."
-
-        # Data berekenen als die er is
-        has_data = False
-        if not r_day_df.empty:
-            gem_en = r_day_df["Energie"].mean()
-            gem_str = r_day_df["Stress"].mean()
-            has_data = True
-        
-        if not r_les_df.empty:
-            gem_les = r_les_df["Lesaanpak"].mean()
-            aantal_l = len(r_les_df)
-            has_data = True
-
-        # Feedback tekst genereren
-        if has_data:
-            feedback_list = []
-            if gem_en > 3.8: feedback_list.append("🚀 **Energie:** Je zit vol energie!")
-            elif gem_en > 0 and gem_en < 2.5: feedback_list.append("🔋 **Energie:** Let op je energiebalans.")
+if pdf_available:
+            # --- HULPFUNCTIE: Matplotlib naar PDF Plaatje ---
+            import io
+            from reportlab.platypus import Image as ReportLabImage
             
-            if gem_str > 3.5: feedback_list.append("🤯 **Stress:** Je ervaart veel stress.")
-            elif gem_str > 0 and gem_str < 2.0: feedback_list.append("🧘 **Stress:** Je bent lekker ontspannen.")
-            
-            if not feedback_list: feedback_list.append("Je scores zijn stabiel en gemiddeld.")
-            analyse_tekst = "\n\n".join(feedback_list)
+            def plot_to_image(fig):
+                """Zet een matplotlib figuur om naar een Reportlab Image"""
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+                buf.seek(0)
+                return ReportLabImage(buf, width=450, height=200) # Pas breedte/hoogte aan
 
-        # 4. WEERGAVE OP HET SCHERM
-        if not has_data:
-            st.info(f"Geen gegevens gevonden voor: {rapport_periode}. Vul eerst de vragenlijst in.")
-        else:
-            with st.expander("🤖 Bekijk jouw Analyse", expanded=True):
-                st.markdown(analyse_tekst)
-
-            # KPI's
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Gem. Energie", f"{gem_en:.1f}")
-            k2.metric("Gem. Stress", f"{gem_str:.1f}")
-            k3.metric("Gem. Lesaanpak", f"{gem_les:.1f}")
-            k4.metric("Aantal Lessen", aantal_l)
-
-        # 5. PDF GENERATIE (Buiten de else, dus altijd zichtbaar)
-        st.divider()
-        
-        # Check of reportlab bestaat
-        try:
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-            from reportlab.lib.styles import getSampleStyleSheet
-            from reportlab.lib import colors
-            pdf_available = True
-        except ImportError:
-            pdf_available = False
-            st.error("⚠️ De module 'reportlab' is niet geïnstalleerd. Installeer deze met `pip install reportlab`.")
-
-        if pdf_available:
-            if st.button("📄 Genereer PDF Rapport"):
+            if st.button("📄 Genereer PRO Rapport"):
                 if not has_data:
                     st.warning("Er is geen data om te exporteren.")
                 else:
                     try:
-                        # Bestandsnaam genereren
-                        clean_email = user['email'].split('@')[0]
-                        report_filename = f"Rapport_{clean_email}_{date.today()}.pdf"
+                        # 1. DATA VOORBEREIDING VOOR DIEPERE ANALYSE
+                        # We mergen de dag-data (Gevoel) met les-data (Prestatie) op datum
+                        # Zorg dat datum overal datetime is
+                        r_day_df["Datum"] = pd.to_datetime(r_day_df["Datum"])
+                        r_les_df["Datum"] = pd.to_datetime(r_les_df["Datum"])
                         
-                        # Document opzetten
+                        # Merge: alleen dagen waar we BEIDE info hebben (voor correlatie)
+                        merged_df = pd.merge(r_les_df, r_day_df, on="Datum", how="inner")
+                        
+                        # Weekdagen toevoegen (0=Maandag, 6=Zondag)
+                        r_les_df["Weekdag"] = r_les_df["Datum"].dt.day_name()
+                        
+                        # --- START PDF OPBOUW ---
+                        clean_email = user['email'].split('@')[0]
+                        report_filename = f"Analyserapport_{clean_email}_{date.today()}.pdf"
+                        
                         doc = SimpleDocTemplate(report_filename)
                         styles = getSampleStyleSheet()
+                        
+                        # Aangepaste stijl voor titels
+                        title_style = styles["Title"]
+                        title_style.textColor = colors.HexColor("#2c3e50")
+                        
+                        h2_style = styles["Heading2"]
+                        h2_style.textColor = colors.HexColor("#e67e22")
+                        h2_style.spaceBefore = 20
+
                         story = []
 
-                        # Titel
-                        story.append(Paragraph(f"<b>Rapport: {clean_email}</b>", styles["Title"]))
-                        story.append(Paragraph(f"Periode: {rapport_periode}", styles["Normal"]))
-                        story.append(Spacer(1, 12))
+                        # === PAGINA 1: TITEL & SAMENVATTING ===
+                        story.append(Paragraph(f"Docenten Monitor: Diepteanalyse", title_style))
+                        story.append(Paragraph(f"<b>Docent:</b> {clean_email} <br/><b>Periode:</b> {rapport_periode}", styles["Normal"]))
+                        story.append(Spacer(1, 20))
 
-                        # Tekst Analyse
-                        story.append(Paragraph("<b>Inzichten</b>", styles["Heading2"]))
-                        # Newlines in markdown vervangen door <br/> voor PDF
-                        clean_text = analyse_tekst.replace("**", "").replace("\n", "<br/>")
-                        story.append(Paragraph(clean_text, styles["Normal"]))
-                        story.append(Spacer(1, 12))
+                        story.append(Paragraph("1. Uitvoerende Samenvatting", h2_style))
+                        summary_text = (
+                            f"In de geselecteerde periode heb je <b>{aantal_l} lessen</b> geregistreerd. "
+                            f"Je gemiddelde energielevel was een <b>{gem_en:.1f}</b> en je stressniveau een <b>{gem_str:.1f}</b>. "
+                            f"Op pedagogisch vlak scoorde je lesaanpak gemiddeld een <b>{gem_les:.1f}</b>."
+                        )
+                        story.append(Paragraph(summary_text, styles["Normal"]))
+                        
+                        # === PAGINA 1: DE INVLOED-ANALYSE (GRAFIEK) ===
+                        if not merged_df.empty and len(merged_df) > 3:
+                            story.append(Paragraph("2. De 'Stress vs. Klasmanagement' Link", h2_style))
+                            story.append(Paragraph(
+                                "Onderstaande grafiek toont of jouw persoonlijke stress (X-as) invloed heeft op je klasmanagement (Y-as). "
+                                "Een dalende lijn betekent: hoe meer stress, hoe lastiger de klas.", 
+                                styles["Italic"]))
+                            
+                            # Matplotlib Plot 1: Scatter met Trendlijn
+                            fig1, ax1 = plt.subplots(figsize=(8, 4))
+                            # Scatter
+                            ax1.scatter(merged_df["Stress"], merged_df["Klasmanagement"], color="#3498db", alpha=0.7)
+                            # Trendlijn (simpele fit)
+                            if len(merged_df) > 1:
+                                z = np.polyfit(merged_df["Stress"], merged_df["Klasmanagement"], 1)
+                                p = np.poly1d(z)
+                                ax1.plot(merged_df["Stress"], p(merged_df["Stress"]), "r--", alpha=0.8, label="Trend")
+                            
+                            ax1.set_xlabel("Mijn Stressniveau (1-5)")
+                            ax1.set_ylabel("Beoordeling Klasmanagement (1-5)")
+                            ax1.set_title("Impact van Stress op de Klas")
+                            ax1.grid(True, linestyle='--', alpha=0.5)
+                            
+                            # Toevoegen aan PDF
+                            story.append(plot_to_image(fig1))
+                            plt.close(fig1) # Geheugen vrijmaken
+                        
+                        # === PAGINA 1/2: WEEKRITME (GRAFIEK) ===
+                        if not r_les_df.empty:
+                            story.append(Paragraph("3. Weekritme & Piekdagen", h2_style))
+                            story.append(Paragraph("Op welke dagen scoor je het hoogst op lesaanpak?", styles["Normal"]))
+                            
+                            # Data groeperen
+                            week_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+                            # Filteren op dagen die in de data zitten
+                            daily_scores = r_les_df.groupby("Weekdag")["Lesaanpak"].mean().reindex(week_order).dropna()
+                            
+                            if not daily_scores.empty:
+                                fig2, ax2 = plt.subplots(figsize=(8, 4))
+                                bars = ax2.bar(daily_scores.index, daily_scores.values, color="#2ecc71")
+                                ax2.set_ylim(0, 5.5)
+                                ax2.set_ylabel("Gemiddelde Lesaanpak")
+                                ax2.set_title("Performance per Weekdag")
+                                
+                                # Waardes boven de balken
+                                for bar in bars:
+                                    height = bar.get_height()
+                                    ax2.text(bar.get_x() + bar.get_width()/2., height,
+                                            f'{height:.1f}',
+                                            ha='center', va='bottom')
+                                
+                                story.append(plot_to_image(fig2))
+                                plt.close(fig2)
 
-                        # Tabel met Cijfers
-                        story.append(Paragraph("<b>Cijfers</b>", styles["Heading2"]))
+                        # === PAGINA 2: TABEL MET DETAILS ===
+                        story.append(Spacer(1, 12))
+                        story.append(Paragraph("4. Cijfermatig Overzicht", h2_style))
+                        
                         data_table = [
-                            ["Metric", "Score"],
-                            ["Energie", f"{gem_en:.1f}"],
-                            ["Stress", f"{gem_str:.1f}"],
-                            ["Lesaanpak", f"{gem_les:.1f}"],
-                            ["Aantal lessen", str(aantal_l)]
+                            ["Metric", "Score", "Interpretatie"],
+                            ["Energie", f"{gem_en:.1f}", "Laag" if gem_en < 3 else "Goed"],
+                            ["Stress", f"{gem_str:.1f}", "Hoog" if gem_str > 3.5 else "OK"],
+                            ["Lesaanpak", f"{gem_les:.1f}", "Aandacht nodig" if gem_les < 3 else "Sterk"],
                         ]
                         
-                        # Tabel opmaak
-                        t = Table(data_table, colWidths=[200, 100])
+                        t = Table(data_table, colWidths=[100, 80, 150])
                         t.setStyle(TableStyle([
-                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
                             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#ecf0f1")),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.white)
                         ]))
                         story.append(t)
-                        
+
                         # PDF Bouwen
                         doc.build(story)
 
-                        # Download knop tonen
+                        # Download knop
                         with open(report_filename, "rb") as f:
                             st.download_button(
-                                label="📥 Download Nu",
+                                label="📥 Download PRO Rapport",
                                 data=f,
                                 file_name=report_filename,
                                 mime="application/pdf"
                             )
                     except Exception as e:
-                        st.error(f"Er ging iets mis bij het maken van de PDF: {e}")
-
+                        st.error(f"Er ging iets mis: {e}")
+                        import traceback
+                        st.write(traceback.format_exc()) # Toont exacte foutmelding voor debugging
 # <--- BELANGRIJK: DEZE ELIF MOET HELEMAAL TERUG NAAR LINKS (OF HETZELFDE NIVEAU ALS IF TEACHER)
 elif user["role"] == "director":
     # (Hier komt jouw bestaande code voor de directeur)
