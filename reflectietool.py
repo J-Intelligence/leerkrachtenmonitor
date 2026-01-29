@@ -383,19 +383,19 @@ if user["role"] == "teacher":
                 # DEFINITIE VAN DE SCHALEN (Tekst die op de slider verschijnt)
                 # We gebruiken een lijst zodat de slider deze stappen toont.
                 opties_aanpak = [
-                    "1: Stroef", 
-                    "2: Moeizaam", 
-                    "3: Voldoende", 
-                    "4: Goed", 
-                    "5: Top"
+                    "1: Sloeg helemaal niet aan", 
+                    "2: Stroef", 
+                    "3: Matig", 
+                    "4: De aanpak werkte", 
+                    "5: Dit was een toples!"
                 ]
                 
                 opties_mgmt = [
-                    "1: Onrustig", 
-                    "2: Rommelig", 
-                    "3: Rustig", 
-                    "4: Werkzaam", 
-                    "5: Uitstekend"
+                    "1: Ik had de klas niet in de hand", 
+                    "2: Het was moeilijk de klas in de hand te houden", 
+                    "3: Werkzaam", 
+                    "4: zeer goede medewerking", 
+                    "5: Ik had de heel goed in de hand"
                 ]
 
                 # SLIDER 1: Lesaanpak
