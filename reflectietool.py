@@ -703,11 +703,11 @@ if user["role"] == "teacher":
         toon_tab3_inhoud()
 
 
-    # -------------------------------------------------
-    # TAB 4 – RAPPORT & INZICHTEN
+# -------------------------------------------------
+    # TAB 4 – RAPPORT, INZICHTEN & CORRELATIES
     # -------------------------------------------------
     with tab4:
-        st.header("📑 Persoonlijk Rapport & Analyse")
+        st.header("📑 Persoonlijk Rapport & Diepteanalyse")
 
         # 1. SELECTIE PERIODE
         r_col1, r_col2 = st.columns([2, 1])
@@ -719,8 +719,8 @@ if user["role"] == "teacher":
                 key="rep_periode_select"
             )
 
-        # 2. DATA VOORBEREIDING (Periode vs All-Time)
-        # -------------------------------------------
+        # 2. DATA VOORBEREIDING
+        # ---------------------
         now = pd.Timestamp.now()
         start_date = now 
         
@@ -731,13 +731,7 @@ if user["role"] == "teacher":
         elif rapport_periode == "Huidig Schooljaar":
             start_date = pd.Timestamp(year=now.year - 1 if now.month < 9 else now.year, month=9, day=1)
 
-        # A. All-Time Gemiddelden (Benchmark)
-        # We berekenen eerst het gemiddelde van AL je data
-        all_time_en = day_df["Energie"].mean() if not day_df.empty else 0
-        all_time_str = day_df["Stress"].mean() if not day_df.empty else 0
-        all_time_les = les_df["Lesaanpak"].mean() if not les_df.empty else 0
-        
-        # B. Periode Data Filteren
+        # A. Data Ophalen & Filteren
         r_day_df = day_df.copy() if 'day_df' in locals() else pd.DataFrame(columns=["Datum", "Energie", "Stress"])
         r_les_df = les_df.copy() if 'les_df' in locals() else pd.DataFrame(columns=["Datum", "Klas", "Lesaanpak", "Klasmanagement"])
 
@@ -749,174 +743,215 @@ if user["role"] == "teacher":
             r_les_df["Datum"] = pd.to_datetime(r_les_df["Datum"])
             r_les_df = r_les_df[r_les_df["Datum"] >= start_date]
 
-        # C. Periode Metrics Berekenen
+        # B. Data Mergen & Variabelen Maken (Rust)
+        merged_df = pd.DataFrame()
+        has_correlation_data = False
+        
+        if not r_les_df.empty and not r_day_df.empty:
+            merged_df = pd.merge(r_les_df, r_day_df, on="Datum", how="inner")
+            if len(merged_df) > 2: # Minimaal 3 punten nodig voor iets zinnigs
+                # Variabele 'Rust' aanmaken (Invers van Stress op schaal 1-5)
+                # Formule: 6 - Stress. (Bijv: Stress 5 -> Rust 1. Stress 1 -> Rust 5)
+                merged_df["Rust"] = 6 - merged_df["Stress"]
+                has_correlation_data = True
+
+        # C. Metrics Berekenen (Gemiddelden)
         gem_en = r_day_df["Energie"].mean() if not r_day_df.empty else 0
         gem_str = r_day_df["Stress"].mean() if not r_day_df.empty else 0
         gem_les = r_les_df["Lesaanpak"].mean() if not r_les_df.empty else 0
+        gem_mng = r_les_df["Klasmanagement"].mean() if not r_les_df.empty else 0
         aantal_l = len(r_les_df)
-        has_data = (aantal_l > 0) or (not r_day_df.empty)
+        
+        # Benchmark (All-time)
+        all_time_en = day_df["Energie"].mean() if not day_df.empty else 0
+        all_time_str = day_df["Stress"].mean() if not day_df.empty else 0
+        all_time_les = les_df["Lesaanpak"].mean() if not les_df.empty else 0
 
-        # D. Verschil Berekenen (Hulpfunctie)
+        # Helper voor tekst (Delta)
         def get_delta_text(current, historical, reverse=False):
             if historical == 0: return "-"
             diff = current - historical
-            # Voor stress is lager beter (reverse=True), voor de rest is hoger beter
-            is_positive = diff < 0 if reverse else diff > 0
-            
-            sign = "+" if diff > 0 else ""
-            return f"{sign}{diff:.1f} vs gem."
+            return f"{diff:+.1f} vs gem."
 
-        # 3. DASHBOARD WEERGAVE
-        if not has_data:
-            st.info(f"Geen gegevens gevonden voor: {rapport_periode}.")
-        else:
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Gem. Energie", f"{gem_en:.1f}", get_delta_text(gem_en, all_time_en))
-            k2.metric("Gem. Stress", f"{gem_str:.1f}", get_delta_text(gem_str, all_time_str, reverse=True), delta_color="inverse")
-            k3.metric("Gem. Lesaanpak", f"{gem_les:.1f}", get_delta_text(gem_les, all_time_les))
-            k4.metric("Aantal Lessen", aantal_l)
+        # 3. DASHBOARD WEERGAVE (KPI's)
+        # -----------------------------
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Gem. Energie", f"{gem_en:.1f}", get_delta_text(gem_en, all_time_en))
+        # Voor stress: Negatief verschil is groen (beter), dus delta_color="inverse"
+        k2.metric("Gem. Stress", f"{gem_str:.1f}", get_delta_text(gem_str, all_time_str, reverse=True), delta_color="inverse")
+        k3.metric("Gem. Lesaanpak", f"{gem_les:.1f}", get_delta_text(gem_les, all_time_les))
+        k4.metric("Geregistreerde Lessen", aantal_l)
 
-        # 4. PDF LOGICA (PRE-CALCULATIE VOOR DIRECT DOWNLOADEN)
         st.divider()
 
-        # Imports checken
+        # 4. CORRELATIE MATRIX OP HET SCHERM
+        # ----------------------------------
+        c_col1, c_col2 = st.columns([1, 1])
+        
+        with c_col1:
+            st.subheader("🔍 Correlatie Matrix")
+            st.caption("Hoe beïnvloeden deze factoren elkaar? (Rood = samenhang, Blauw = tegenpolen)")
+            
+            if has_correlation_data:
+                import seaborn as sns
+                
+                # Selecteer alleen de relevante kolommen voor de matrix
+                corr_data = merged_df[["Klasmanagement", "Lesaanpak", "Energie", "Rust"]].corr()
+                
+                # Plot
+                fig_corr, ax_corr = plt.subplots(figsize=(5, 4))
+                sns.heatmap(corr_data, annot=True, cmap="coolwarm", vmin=-1, vmax=1, center=0, 
+                            fmt=".2f", linewidths=0.5, ax=ax_corr, cbar=False)
+                st.pyplot(fig_corr)
+            else:
+                st.info("Nog onvoldoende gecombineerde data (Dag + Les) voor een correlatiematrix.")
+
+        with c_col2:
+            st.subheader("💡 Inzichten")
+            if has_correlation_data:
+                # Automatische analyse van de sterkste correlatie (exclusief diagonaal)
+                corr_matrix = corr_data.copy()
+                np.fill_diagonal(corr_matrix.values, 0) # Diagonaal negeren
+                
+                # Vind max waarde en bijbehorende labels
+                max_val = corr_matrix.max().max()
+                row_idx, col_idx = np.unravel_index(corr_matrix.values.argmax(), corr_matrix.values.shape)
+                var1, var2 = corr_matrix.columns[row_idx], corr_matrix.columns[col_idx]
+                
+                st.write(f"**Sterkste verband:**")
+                st.info(f"Er is een sterke positieve link ({max_val:.2f}) gevonden tussen **{var1}** en **{var2}**. Wanneer de één stijgt, stijgt de ander vaak mee.")
+                
+                st.write("**Wat betekent dit?**")
+                st.markdown("""
+                * **Energie & Klasmanagement:** Fit zijn helpt om de klas in de hand te houden.
+                * **Rust & Lesaanpak:** Een kalm hoofd zorgt vaak voor betere didactiek.
+                * **Klasmanagement & Lesaanpak:** Orde is de basis voor goed lesgeven.
+                """)
+            else:
+                st.write("Zodra je meer data invoert (zowel dag-checks als lessen op dezelfde dagen), verschijnen hier automatisch verbanden.")
+
+        # 5. PDF RAPPORT GENEREREN
+        # ------------------------
+        st.divider()
+        
+        # Imports check
         try:
             import io
-            import numpy as np
             from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
             from reportlab.lib.styles import getSampleStyleSheet
             from reportlab.lib import colors
             pdf_available = True
         except ImportError:
             pdf_available = False
-            st.error("⚠️ PDF module ontbreekt.")
+            st.error("⚠️ PDF Module (ReportLab) ontbreekt.")
 
-        if pdf_available and has_data:
+        if pdf_available and aantal_l > 0:
             
-            # --- FUNCTIE OM PDF BYTES TE GENEREREN ---
-            def generate_pdf_bytes():
+            def generate_pdf():
                 buffer = io.BytesIO()
                 
-                # Plot helpers
-                def plot_to_image(fig):
+                # 1. Functie om plots om te zetten
+                def plot_to_img(fig):
                     img_buf = io.BytesIO()
-                    fig.savefig(img_buf, format='png', dpi=100, bbox_inches='tight')
+                    fig.savefig(img_buf, format='png', dpi=120, bbox_inches='tight')
                     img_buf.seek(0)
-                    return ReportLabImage(img_buf, width=450, height=220)
+                    return ReportLabImage(img_buf, width=400, height=220)
 
-                # --- NAAM FIX ---
-                raw_name = user['email'].split('@')[0]
-                clean_name = raw_name.replace('.', ' ').title()
-                report_filename = f"Rapport_{raw_name}.pdf"
+                # 2. Naam Opschonen (johan.jouck -> Johan Jouck)
+                raw_name = user['email'].split('@')[0] # johan.jouck
+                # Vervang punt door spatie en maak Title Case
+                clean_name = raw_name.replace('.', ' ').title() 
                 
-                # --- DATA VOORBEREIDING ---
-                merged_df = pd.DataFrame()
-                if not r_les_df.empty and not r_day_df.empty:
-                    merged_df = pd.merge(r_les_df, r_day_df, on="Datum", how="inner")
-                
-                if not r_les_df.empty:
-                    r_les_df["Weekdag"] = r_les_df["Datum"].dt.day_name()
-
-                # --- PDF OPBOUW ---
+                # 3. Document Opzet
                 doc = SimpleDocTemplate(buffer)
                 styles = getSampleStyleSheet()
+                story = []
                 
                 # Styles
                 title_style = styles["Title"]
                 title_style.textColor = colors.HexColor("#2c3e50")
                 h2_style = styles["Heading2"]
-                h2_style.textColor = colors.HexColor("#e67e22")
+                h2_style.textColor = colors.HexColor("#2980b9")
                 h2_style.spaceBefore = 15
-                
-                story = []
 
-                # Header
-                story.append(Paragraph(f"Docenten Monitor: Diepteanalyse", title_style))
-                story.append(Paragraph(f"<b>Docent:</b> {clean_name} <br/><b>Periode:</b> {rapport_periode}", styles["Normal"]))
+                # HEADER
+                story.append(Paragraph("Docenten Monitor: Analyse Rapport", title_style))
+                story.append(Paragraph(f"<b>Docent:</b> {clean_name}<br/><b>Periode:</b> {rapport_periode}", styles["Normal"]))
                 story.append(Spacer(1, 20))
 
-                # 1. Samenvatting
-                story.append(Paragraph("1. Uitvoerende Samenvatting", h2_style))
-                summary_text = (
-                    f"In de geselecteerde periode heb je <b>{aantal_l} lessen</b> geregistreerd. "
-                    f"Je gemiddelde energielevel was een <b>{gem_en:.1f}</b> (Historisch gem: {all_time_en:.1f}). "
-                    f"Je lesaanpak scoorde gemiddeld een <b>{gem_les:.1f}</b>."
-                )
-                story.append(Paragraph(summary_text, styles["Normal"]))
-
-                # 2. Correlatie
-                story.append(Paragraph("2. Correlatie: Stress & Klasmanagement", h2_style))
-                if not merged_df.empty and len(merged_df) > 1:
-                    fig1, ax1 = plt.subplots(figsize=(8, 4))
-                    ax1.scatter(merged_df["Stress"], merged_df["Klasmanagement"], color="#3498db", s=80, alpha=0.7)
-                    try:
-                        z = np.polyfit(merged_df["Stress"], merged_df["Klasmanagement"], 1)
-                        p = np.poly1d(z)
-                        ax1.plot(merged_df["Stress"], p(merged_df["Stress"]), "r--", linewidth=2, label="Trend")
-                    except: pass
-                    ax1.set_xlabel("Stress")
-                    ax1.set_ylabel("Klasmanagement")
-                    ax1.grid(True, linestyle='--', alpha=0.5)
-                    story.append(plot_to_image(fig1))
-                    plt.close(fig1)
-                else:
-                    story.append(Paragraph("<i>Onvoldoende data voor correlatie-analyse.</i>", styles["Normal"]))
-
-                # 3. Weekritme
-                story.append(Paragraph("3. Weekritme", h2_style))
-                if not r_les_df.empty:
-                    week_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-                    daily_scores = r_les_df.groupby("Weekdag")["Lesaanpak"].mean().reindex(week_order).dropna()
-                    if not daily_scores.empty:
-                        fig2, ax2 = plt.subplots(figsize=(8, 4))
-                        bars = ax2.bar(daily_scores.index, daily_scores.values, color="#2ecc71")
-                        ax2.set_ylim(0, 5.5)
-                        for bar in bars:
-                             ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{bar.get_height():.1f}', ha='center', va='bottom')
-                        story.append(plot_to_image(fig2))
-                        plt.close(fig2)
-
-                # 4. Tabel met Benchmarks
-                story.append(Spacer(1, 12))
-                story.append(Paragraph("4. Benchmark Analyse", h2_style))
+                # SECTIE 1: Kerncijfers
+                story.append(Paragraph("1. Kerncijfers & Benchmark", h2_style))
                 
-                # Data voor tabel: Metric, Periode Score, Historisch Gemiddelde, Verschil
-                data_table = [
-                    ["Metric", "Huidige Score", "Historisch Gem.", "Verschil"],
+                # Tabel data
+                tbl_data = [
+                    ["Indicator", "Jouw Score", "Jouw Historisch Gem.", "Verschil"],
                     ["Energie", f"{gem_en:.1f}", f"{all_time_en:.1f}", get_delta_text(gem_en, all_time_en)],
                     ["Stress", f"{gem_str:.1f}", f"{all_time_str:.1f}", get_delta_text(gem_str, all_time_str, reverse=True)],
                     ["Lesaanpak", f"{gem_les:.1f}", f"{all_time_les:.1f}", get_delta_text(gem_les, all_time_les)],
+                    ["Klasmanagement", f"{gem_mng:.1f}", "-", "-"],
                 ]
                 
-                t = Table(data_table, colWidths=[120, 100, 100, 100])
+                t = Table(tbl_data, colWidths=[120, 100, 120, 100])
                 t.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#ecf0f1")),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.white)
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#34495e")),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#ecf0f1")),
+                    ('GRID', (0,0), (-1,-1), 1, colors.white),
                 ]))
                 story.append(t)
-                
+                story.append(Spacer(1, 20))
+
+                # SECTIE 2: Correlatie Matrix
+                story.append(Paragraph("2. Correlatie Matrix: De Verbanden", h2_style))
+                if has_correlation_data:
+                    story.append(Paragraph(
+                        "Onderstaande matrix toont de samenhang tussen Energie, Rust, Lesaanpak en Klasmanagement. "
+                        "Rood (dichter bij 1) betekent een sterk positief verband.", styles["Normal"]))
+                    story.append(Spacer(1, 10))
+                    
+                    # Opnieuw plotten voor PDF (schoner formaat)
+                    fig_pdf_corr, ax_pdf_corr = plt.subplots(figsize=(6, 4))
+                    sns.heatmap(merged_df[["Klasmanagement", "Lesaanpak", "Energie", "Rust"]].corr(), 
+                                annot=True, cmap="coolwarm", vmin=-1, vmax=1, center=0, 
+                                fmt=".2f", cbar=False, ax=ax_pdf_corr)
+                    
+                    story.append(plot_to_img(fig_pdf_corr))
+                    plt.close(fig_pdf_corr)
+                else:
+                    story.append(Paragraph("Onvoldoende data om correlaties te berekenen.", styles["Italic"]))
+
+                # SECTIE 3: Weekpatroon
+                story.append(Paragraph("3. Weekpatroon (Lesaanpak)", h2_style))
+                if not r_les_df.empty:
+                    r_les_df["Weekdag"] = r_les_df["Datum"].dt.day_name()
+                    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+                    week_scores = r_les_df.groupby("Weekdag")["Lesaanpak"].mean().reindex(days).dropna()
+                    
+                    if not week_scores.empty:
+                        fig_bar, ax_bar = plt.subplots(figsize=(6, 3))
+                        ax_bar.bar(week_scores.index, week_scores.values, color="#27ae60")
+                        ax_bar.set_ylabel("Score (1-5)")
+                        ax_bar.set_ylim(0, 5.5)
+                        ax_bar.grid(axis='y', linestyle='--', alpha=0.5)
+                        story.append(plot_to_img(fig_bar))
+                        plt.close(fig_bar)
+
                 doc.build(story)
                 buffer.seek(0)
                 return buffer
 
-            # --- DIRECT DOWNLOAD BUTTON ---
-            # We genereren de PDF 'on the fly' en stoppen de bytes direct in de knop.
-            # Dit voorkomt de dubbele klik.
-            pdf_bytes = generate_pdf_bytes()
+            # DIRECT DOWNLOADEN (Geen dubbele klik)
+            pdf_data = generate_pdf()
+            clean_filename = f"Rapport_{user['email'].split('@')[0].replace('.', '_')}.pdf"
             
-            clean_name = user['email'].split('@')[0].replace('.', '_')
-            file_name = f"Rapport_{clean_name}_{rapport_periode.replace(' ', '_')}.pdf"
-
             st.download_button(
-                label="📥 Download PRO Rapport Direct",
-                data=pdf_bytes,
-                file_name=file_name,
+                label="📥 Download Rapport (PDF)",
+                data=pdf_data,
+                file_name=clean_filename,
                 mime="application/pdf",
-                type="primary" # Maakt de knop opvallender
+                type="primary"
             )
                         
 # <--- BELANGRIJK: DEZE ELIF MOET HELEMAAL TERUG NAAR LINKS (OF HETZELFDE NIVEAU ALS IF TEACHER)
