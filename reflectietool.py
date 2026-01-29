@@ -687,21 +687,25 @@ elif user["role"] == "director":
     pass
     
 # -------------------------------------------------
-    # TAB 4 – RAPPORT & INZICHTEN
+    # TAB 4 – RAPPORT & INZICHTEN (HERSTELDE VERSIE)
     # -------------------------------------------------
     with tab4:
         st.header("📑 Persoonlijk Rapport & Analyse")
         
+        # DEBUG CHECK: Zie je deze tekst? Dan werkt de tab zelf wel.
+        # st.write("Debug: Tab 4 wordt geladen...") 
+
         # 1. SELECTIE PERIODE
         r_col1, r_col2 = st.columns([2, 1])
         with r_col1:
             rapport_periode = st.selectbox(
                 "📅 Selecteer periode:",
                 ["Laatste 2 weken", "Laatste 30 dagen", "Huidig Schooljaar"],
-                index=1
+                index=1,
+                key="rep_periode_select"
             )
         
-        # Data filteren op basis van selectie
+        # 2. DATA FILTEREN
         now = pd.Timestamp.now()
         start_date = now # fallback
         
@@ -715,101 +719,128 @@ elif user["role"] == "director":
             else:
                 start_date = pd.Timestamp(year=now.year, month=9, day=1)
 
-        # Filter de dataframes
-        r_day_df = day_df[day_df["Datum"] >= start_date].copy()
-        r_les_df = les_df[les_df["Datum"] >= start_date].copy()
-
-        # Variabelen initialiseren voor PDF (zodat ze altijd bestaan)
-        gem_en = 0
-        gem_str = 0
-        gem_les = 0
-        aantal_l = 0
-        analyse_tekst = "Geen data beschikbaar."
-
-        if r_day_df.empty and r_les_df.empty:
-            st.info("Geen gegevens gevonden voor deze periode.")
+        # Filter de dataframes (met veilige kopie)
+        if 'day_df' in locals() and not day_df.empty:
+            r_day_df = day_df[day_df["Datum"] >= start_date].copy()
         else:
-            # 2. ANALYSE GENEREREN
-            gem_en = r_day_df["Energie"].mean() if not r_day_df.empty else 0
-            gem_str = r_day_df["Stress"].mean() if not r_day_df.empty else 0
-            gem_les = r_les_df["Lesaanpak"].mean() if not r_les_df.empty else 0
+            r_day_df = pd.DataFrame(columns=["Email", "Datum", "Energie", "Stress"])
+
+        if 'les_df' in locals() and not les_df.empty:
+            r_les_df = les_df[les_df["Datum"] >= start_date].copy()
+        else:
+            r_les_df = pd.DataFrame(columns=["Klas", "Lesaanpak", "Klasmanagement"])
+
+        # 3. VARIABELEN INITIALISEREN (Belangrijk tegen crashes!)
+        gem_en = 0.0
+        gem_str = 0.0
+        gem_les = 0.0
+        aantal_l = 0
+        analyse_tekst = "Er is nog onvoldoende data in deze periode om een analyse te maken."
+
+        # Data berekenen als die er is
+        has_data = False
+        if not r_day_df.empty:
+            gem_en = r_day_df["Energie"].mean()
+            gem_str = r_day_df["Stress"].mean()
+            has_data = True
+        
+        if not r_les_df.empty:
+            gem_les = r_les_df["Lesaanpak"].mean()
             aantal_l = len(r_les_df)
+            has_data = True
 
-            # Simpele analyse logica (inkorten voor overzicht)
-            feedback = []
-            if gem_en > 3.8: feedback.append("🚀 Je energiepeil is hoog.")
-            elif gem_en < 2.5: feedback.append("🔋 Je energie is laag.")
-            if gem_str > 3.5: feedback.append("🤯 Je stressniveau is hoog.")
-            if not feedback: feedback.append("Je bent stabiel bezig.")
+        # Feedback tekst genereren
+        if has_data:
+            feedback_list = []
+            if gem_en > 3.8: feedback_list.append("🚀 **Energie:** Je zit vol energie!")
+            elif gem_en > 0 and gem_en < 2.5: feedback_list.append("🔋 **Energie:** Let op je energiebalans.")
             
-            analyse_tekst = "\n".join(feedback)
+            if gem_str > 3.5: feedback_list.append("🤯 **Stress:** Je ervaart veel stress.")
+            elif gem_str > 0 and gem_str < 2.0: feedback_list.append("🧘 **Stress:** Je bent lekker ontspannen.")
+            
+            if not feedback_list: feedback_list.append("Je scores zijn stabiel en gemiddeld.")
+            analyse_tekst = "\n\n".join(feedback_list)
 
-            with st.expander("🤖 Bekijk Analyse", expanded=True):
+        # 4. WEERGAVE OP HET SCHERM
+        if not has_data:
+            st.info(f"Geen gegevens gevonden voor: {rapport_periode}. Vul eerst de vragenlijst in.")
+        else:
+            with st.expander("🤖 Bekijk jouw Analyse", expanded=True):
                 st.markdown(analyse_tekst)
 
-            # 3. DASHBOARD VISUALS (KPIs)
+            # KPI's
             k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Energie", f"{gem_en:.1f}")
-            k2.metric("Stress", f"{gem_str:.1f}")
-            k3.metric("Lesaanpak", f"{gem_les:.1f}")
-            k4.metric("Aantal Lessen", antal_l)
+            k1.metric("Gem. Energie", f"{gem_en:.1f}")
+            k2.metric("Gem. Stress", f"{gem_str:.1f}")
+            k3.metric("Gem. Lesaanpak", f"{gem_les:.1f}")
+            k4.metric("Aantal Lessen", aantal_l)
 
-            # ==========================================
-            # 4. PDF RAPPORT GENEREREN
-            # ==========================================
-            st.divider()
-            
-            if st.button("📄 Download Rapport (PDF)"):
-                report_filename = f"Rapport_{user['email'].split('@')[0]}_{date.today()}.pdf"
-                doc = SimpleDocTemplate(report_filename)
-                styles = getSampleStyleSheet()
-                story = []
+        # 5. PDF GENERATIE (Buiten de else, dus altijd zichtbaar)
+        st.divider()
+        
+        # Check of reportlab bestaat voordat we crashen
+        try:
+            from reportlab.platypus import SimpleDocTemplate
+            pdf_available = True
+        except ImportError:
+            pdf_available = False
+            st.error("⚠️ De module 'reportlab' is niet geïnstalleerd. Installeer deze met `pip install reportlab`.")
 
-                story.append(Paragraph(f"<b>Leerkrachtenmonitor Rapport</b>", styles["Title"]))
-                story.append(Paragraph(f"Periode: {rapport_periode}", styles["Normal"]))
-                story.append(Spacer(1, 12))
+        if pdf_available:
+            if st.button("📄 Genereer PDF Rapport"):
+                if not has_data:
+                    st.warning("Er is geen data om te exporteren.")
+                else:
+                    try:
+                        # Bestandsnaam
+                        clean_email = user['email'].split('@')[0]
+                        report_filename = f"Rapport_{clean_email}_{date.today()}.pdf"
+                        
+                        doc = SimpleDocTemplate(report_filename)
+                        styles = getSampleStyleSheet()
+                        story = []
 
-                story.append(Paragraph("<b>📊 Analyse & Inzichten</b>", styles["Heading2"]))
-                
-                clean_text = analyse_tekst.replace("**", "")
-                for line in clean_text.split("\n"):
-                    if line.strip():
-                        story.append(Paragraph(line, styles["Normal"]))
-                        story.append(Spacer(1, 6))
-                
-                story.append(Spacer(1, 12))
-                story.append(Paragraph("<b>📈 Cijferoverzicht</b>", styles["Heading2"]))
-                
-                data_table = [
-                    ["Metric", "Score"],
-                    ["Gemiddelde Energie", f"{gem_en:.2f}"],
-                    ["Gemiddelde Stress", f"{gem_str:.2f}"],
-                    ["Gemiddelde Lesaanpak", f"{gem_les:.2f}"],
-                    ["Aantal lessen", str(aantal_l)]
-                ]
+                        # Titel
+                        story.append(Paragraph(f"<b>Rapport: {clean_email}</b>", styles["Title"]))
+                        story.append(Paragraph(f"Periode: {rapport_periode}", styles["Normal"]))
+                        story.append(Spacer(1, 12))
 
-                t = Table(data_table, colWidths=[200, 100])
-                t.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
-                ]))
-                story.append(t)
-                
-                doc.build(story)
-                
-                with open(report_filename, "rb") as f:
-                    st.download_button(
-                        label="📥 Download PDF",
-                        data=f,
-                        file_name=report_filename,
-                        mime="application/pdf"
-                    )
+                        # Tekst
+                        story.append(Paragraph("<b>Inzichten</b>", styles["Heading2"]))
+                        clean_text = analyse_tekst.replace("**", "").replace("\n", "<br/>")
+                        story.append(Paragraph(clean_text, styles["Normal"]))
+                        story.append(Spacer(1, 12))
 
+                        # Tabel
+                        story.append(Paragraph("<b>Cijfers</b>", styles["Heading2"]))
+                        data_table = [
+                            ["Metric", "Score"],
+                            ["Energie", f"{gem_en:.1f}"],
+                            ["Stress", f"{gem_str:.1f}"],
+                            ["Lesaanpak", f"{gem_les:.1f}"],
+                            ["Aantal lessen", str(aantal_l)]
+                        ]
+                        
+                        t = Table(data_table, colWidths=[200, 100])
+                        t.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                        ]))
+                        story.append(t)
+                        
+                        doc.build(story)
+
+                        # Download knop
+                        with open(report_filename, "rb") as f:
+                            st.download_button(
+                                label="📥 Download Nu",
+                                data=f,
+                                file_name=report_filename,
+                                mime="application/pdf"
+                            )
+                    except Exception as e:
+                        st.error(f"Er ging iets mis bij het maken van de PDF: {e}")
 # =================================================
 # =============== DIRECTIE VIEW ===================
 # =================================================
