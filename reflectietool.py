@@ -395,7 +395,7 @@ if user["role"] == "teacher":
                     "2: Het was moeilijk de klas in de hand te houden", 
                     "3: Werkzaam", 
                     "4: zeer goede medewerking", 
-                    "5: Ik had de heel goed in de hand"
+                    "5: Ik had de groep heel goed in de hand"
                 ]
 
                 # SLIDER 1: Lesaanpak
