@@ -509,3 +509,111 @@ if user["role"] == "teacher":
                 doc.build(story)
                 with open(path, "rb") as f:
                     st.download_button("Download PDF", f, file_name=f"Maandrapport_{last_month}.pdf")
+
+# =================================================
+# =============== DIRECTIE VIEW ===================
+# =================================================
+elif user["role"] == "director":
+    st.header("🎓 Directie Dashboard (Anoniem)")
+    st.info("Dit dashboard toont geaggregeerde data van alle leerkrachten en klassen.")
+
+    # 1. Data laden van alle gebruikers
+    # Let op: Dit gebruikt de lokale CSV bestanden via de functie die je bovenaan definieerde
+    df_days_total, df_lessons_total = load_all_school_data()
+
+    if df_days_total.empty and df_lessons_total.empty:
+        st.warning("Nog onvoldoende data beschikbaar in het systeem.")
+        st.stop()
+
+    # --- KPI RIJ ---
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    
+    with kpi1:
+        st.metric("Aantal Leerkrachten", df_days_total['Email'].nunique() if 'Email' in df_days_total.columns else 0)
+    
+    with kpi2:
+        # Gemiddelde energie (uit day files)
+        avg_energy = df_days_total['Energie'].mean() if not df_days_total.empty else 0
+        st.metric("Gem. Energie Team", f"{avg_energy:.1f}/5")
+
+    with kpi3:
+        # Gemiddelde lesaanpak (uit lesson files)
+        avg_aanpak = df_lessons_total['Lesaanpak'].mean() if not df_lessons_total.empty else 0
+        st.metric("Gem. Lesaanpak", f"{avg_aanpak:.1f}/5")
+
+    with kpi4:
+        # Totaal aantal geregistreerde lessen
+        st.metric("Lessen Geregistreerd", len(df_lessons_total))
+
+    st.markdown("---")
+
+    # --- TABS VOOR VISUALISATIES ---
+    tab_overview, tab_wellbeing, tab_culture = st.tabs([
+        "📊 Klasstatistieken", 
+        "🦋 Sfeermeter (Sankey)", 
+        "🧘 Welzijn Team"
+    ])
+
+    # TAB 1: Joyplots (Ridgeline) per klas
+    with tab_overview:
+        st.subheader("Verdeling Lesaanpak & Management per Klas")
+        if not df_lessons_total.empty:
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                fig_aanpak = draw_ridgeline_artistic(
+                    df_lessons_total, 
+                    kolom="Lesaanpak", 
+                    titel="Didactische Aanpak", 
+                    basis_kleur_naam="Teal"
+                )
+                if fig_aanpak: st.plotly_chart(fig_aanpak, use_container_width=True)
+            
+            with col_b:
+                fig_mgmt = draw_ridgeline_artistic(
+                    df_lessons_total, 
+                    kolom="Klasmanagement", 
+                    titel="Klasmanagement", 
+                    basis_kleur_naam="Sunset"
+                )
+                if fig_mgmt: st.plotly_chart(fig_mgmt, use_container_width=True)
+        else:
+            st.info("Geen lesdata beschikbaar.")
+
+    # TAB 2: Butterfly Sankey
+    with tab_culture:
+        st.subheader("Flow: Negatief gedrag ➔ Klas ➔ Positief gedrag")
+        st.markdown("*Hoe verhouden de aandachtspunten zich tot de positieve punten per klas?*")
+        
+        if not df_lessons_total.empty:
+            fig_sankey = draw_sankey_butterfly(df_lessons_total)
+            if fig_sankey:
+                st.plotly_chart(fig_sankey, use_container_width=True)
+            else:
+                st.warning("Niet genoeg label-data voor de Sankey grafiek.")
+        else:
+            st.info("Geen data.")
+
+    # TAB 3: Welzijn Team (Timeline)
+    with tab_wellbeing:
+        st.subheader("Trendlijn Energie & Stress (Gemiddelde hele team)")
+        
+        if not df_days_total.empty:
+            # Zorg dat datum datetime is
+            df_days_total["Datum"] = pd.to_datetime(df_days_total["Datum"], errors='coerce')
+            
+            # Groepeer per datum en neem het gemiddelde van alle leerkrachten
+            daily_avg = df_days_total.groupby("Datum")[["Energie", "Stress"]].mean().reset_index()
+            
+            fig_trend = px.line(
+                daily_avg, 
+                x="Datum", 
+                y=["Energie", "Stress"],
+                markers=True,
+                color_discrete_map={"Energie":"#2ecc71", "Stress":"#e74c3c"},
+                title="Evolutie welzijn over tijd"
+            )
+            fig_trend.update_layout(yaxis_range=[0.5, 5.5])
+            st.plotly_chart(fig_trend, use_container_width=True)
+        else:
+            st.info("Nog geen welzijnsdata van leerkrachten.")
