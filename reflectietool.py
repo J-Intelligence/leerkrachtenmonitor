@@ -502,7 +502,6 @@ if user["role"] == "teacher":
                     color_map = {row["Label"]: ("#2ecc71" if row["Type"] == "Positief" else "#e74c3c") for _, row in counts.iterrows()}
 
                     # Wordcloud genereren
-                    # Let op: Zorg dat 'wordcloud' in requirements.txt staat en ge-import is bovenaan je script
                     try:
                         from wordcloud import WordCloud
                         wc = WordCloud(width=800, height=350, background_color="white", random_state=42).generate_from_frequencies(words_freq)
@@ -521,9 +520,12 @@ if user["role"] == "teacher":
             # ==========================================
             st.subheader("🧘 Jouw Welzijnstrend")
             
-            # Kopie maken om veilig te werken
-            plot_df = day_df.copy() if 'day_df' in locals() else pd.DataFrame()
-            
+            # We gebruiken day_df direct (deze is globaal beschikbaar)
+            if 'day_df' in globals() or 'day_df' in locals():
+                plot_df = day_df.copy()
+            else:
+                plot_df = pd.DataFrame() # Fallback
+
             if not plot_df.empty:
                 plot_df["Datum"] = pd.to_datetime(plot_df["Datum"], errors="coerce")
                 plot_df = plot_df.dropna(subset=["Datum"]).sort_values("Datum")
@@ -580,8 +582,12 @@ if user["role"] == "teacher":
                     key="tab3_filter_periode"
                 )
 
-            # Data voorbereiden
-            df_filtered = les_df.copy() if 'les_df' in locals() else pd.DataFrame()
+            # Data voorbereiden (Check globals voor les_df)
+            if 'les_df' in globals() or 'les_df' in locals():
+                df_filtered = les_df.copy()
+            else:
+                df_filtered = pd.DataFrame()
+
             if not df_filtered.empty:
                 df_filtered["Datum"] = pd.to_datetime(df_filtered["Datum"], errors='coerce')
                 
@@ -622,7 +628,11 @@ if user["role"] == "teacher":
             st.subheader("⚔️ Vergelijk 2 Klassen")
 
             def render_klas_vergelijker():
-                local_df = les_df.copy() if 'les_df' in locals() else pd.DataFrame()
+                # Ook hier globals checken of direct gebruiken
+                if 'les_df' in globals() or 'les_df' in locals():
+                    local_df = les_df.copy()
+                else:
+                    local_df = pd.DataFrame()
                 
                 if not local_df.empty:
                     avail_classes = sorted(local_df["Klas"].unique())
@@ -701,8 +711,7 @@ if user["role"] == "teacher":
 
         # EINDE FRAGMENT DEFINITIE - Nu uitvoeren
         toon_tab3_inhoud()
-
-
+        
 # -------------------------------------------------
     # TAB 4 – RAPPORT, INZICHTEN & CORRELATIES
     # -------------------------------------------------
