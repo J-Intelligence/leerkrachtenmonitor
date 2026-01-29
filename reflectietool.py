@@ -74,7 +74,7 @@ if "user" not in st.session_state:
 
     with tab_login:
         email = normalize_email(st.text_input("E-mail"))
-        pw = st.text_input("Wachtwoord", type="password")
+        pw = st.text_input("Wachtwoord", type="password", key="login_password")
         remember = st.checkbox("Onthoud mij")
 
         if st.button("Inloggen"):
@@ -89,7 +89,7 @@ if "user" not in st.session_state:
 
     with tab_reg:
         r_email = normalize_email(st.text_input("School-e-mail"))
-        r_pw = st.text_input("Wachtwoord", type="password")
+        r_pw = st.text_input("Wachtwoord", type="password", key="reg_password")
         if st.button("Account aanmaken"):
             if r_email in users.email.values:
                 st.error("Account bestaat al")
