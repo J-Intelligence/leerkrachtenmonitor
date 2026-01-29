@@ -517,20 +517,17 @@ elif user["role"] == "director":
     st.header("🎓 Directie Dashboard")
 
     # ---------------------------------------------------------
-    # STAP 1: DATA LADEN (Globaal)
+    # STAP 1: DATA LADEN
     # ---------------------------------------------------------
     _, df_lessons_raw = load_all_school_data()
     
-    # Datum conversie & Opschonen
     if not df_lessons_raw.empty:
         df_lessons_raw["Datum"] = pd.to_datetime(df_lessons_raw["Datum"], errors='coerce')
         df_lessons_raw = df_lessons_raw.dropna(subset=["Datum"])
-        # Lijst van alle klassen voor filters
         all_classes = sorted(df_lessons_raw["Klas"].unique())
     else:
         all_classes = []
 
-    # Welzijnsdata laden
     conn = st.connection("gsheets", type=GSheetsConnection)
     try:
         df_sheet = conn.read(spreadsheet=SHEET_URL, ttl=0)
@@ -545,17 +542,17 @@ elif user["role"] == "director":
         df_wellbeing_raw = pd.DataFrame(columns=["Datum", "Energie", "Stress"])
 
     # ---------------------------------------------------------
-    # STAP 2: GLOBALE KPI's
+    # STAP 2: KPI's
     # ---------------------------------------------------------
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("📝 Registraties", len(df_lessons_raw))
     k2.metric("🏫 Klassen", len(all_classes))
     
     avg_en = df_wellbeing_raw['Energie'].mean() if not df_wellbeing_raw.empty else 0
-    k3.metric("🔋 Energie (Gem.)", f"{avg_en:.1f}")
+    k3.metric("🔋 Energie", f"{avg_en:.1f}")
     
     avg_str = df_wellbeing_raw['Stress'].mean() if not df_wellbeing_raw.empty else 0
-    k4.metric("🤯 Stress (Gem.)", f"{avg_str:.1f}")
+    k4.metric("🤯 Stress", f"{avg_str:.1f}")
     
     st.markdown("---")
 
@@ -563,304 +560,253 @@ elif user["role"] == "director":
     # STAP 3: TABS
     # ---------------------------------------------------------
     tab_stats, tab_wellbeing, tab_culture = st.tabs([
-        "📊 Klas Statistieken (Heatmap & Verdeling)", 
+        "📊 Klas Statistieken", 
         "🧘 Welzijn Trend", 
-        "🦋 Oorzaak & Gevolg (Sankey)"
+        "🦋 Oorzaak & Gevolg"
     ])
 
     # ==========================================
-    # TAB 1: HEATMAPS & STATS
+    # TAB 1: HEATMAPS & RIDGELINES (Met Checkboxes)
     # ==========================================
     with tab_stats:
-        # --- FILTERS ---
-        with st.container(border=True):
-            col_f1, col_f2 = st.columns([1, 2])
-            with col_f1:
-                # Nieuwe periode opties
-                period_choice = st.radio(
-                    "📅 Periode:",
-                    ["Volledig schooljaar", "Afgelopen maand", "Afgelopen 2 weken"],
-                    key="tab1_period"
-                )
-            with col_f2:
-                sel_classes_tab1 = st.multiselect(
-                    "🏫 Toon klassen:",
-                    options=all_classes,
-                    default=all_classes,
-                    key="tab1_classes"
-                )
+        st.subheader("🗓️ Evolutie & Verdeling")
+        
+        col_content, col_filter = st.columns([3, 1])
 
-        # --- DATUM LOGICA ---
+        # --- RECHTS: FILTERS (CHECKBOXES) ---
+        with col_filter:
+            st.markdown("**📅 Periode**")
+            p_choice = st.radio("Kies:", ["Volledig schooljaar", "Afgelopen maand", "Afgelopen 2 weken"], label_visibility="collapsed", key="t1_per")
+            
+            st.markdown("---")
+            st.markdown("**🏫 Klassen**")
+            with st.container(height=400, border=True):
+                sel_classes_t1 = []
+                # Checkbox 'Alles Selecteren' is handig, maar we doen simpelweg alles default aan:
+                for k in all_classes:
+                    if st.checkbox(f"{k}", value=True, key=f"t1_chk_{k}"):
+                        sel_classes_t1.append(k)
+
+        # --- LOGICA ---
         today = pd.Timestamp.today()
-        if period_choice == "Afgelopen maand":
-            start_date = today - pd.Timedelta(days=30)
-        elif period_choice == "Afgelopen 2 weken":
-            start_date = today - pd.Timedelta(days=14)
-        else: # Volledig schooljaar (vanaf 1 sept)
-            start_date = pd.Timestamp(year=today.year if today.month >= 9 else today.year - 1, month=9, day=1)
+        if p_choice == "Afgelopen maand":
+            start_d = today - pd.Timedelta(days=30)
+        elif p_choice == "Afgelopen 2 weken":
+            start_d = today - pd.Timedelta(days=14)
+        else:
+            start_d = pd.Timestamp(year=today.year if today.month >= 9 else today.year - 1, month=9, day=1)
 
-        # Filter toepassen
         df_t1 = df_lessons_raw[
-            (df_lessons_raw["Datum"] >= start_date) & 
-            (df_lessons_raw["Klas"].isin(sel_classes_tab1))
+            (df_lessons_raw["Datum"] >= start_d) & 
+            (df_lessons_raw["Klas"].isin(sel_classes_t1))
         ].copy()
 
-        if not df_t1.empty:
-            st.markdown("#### 🔥 Evolutie per Maand")
-            
-            # Maak maand-kolom voor groepering (altijd de 1e van de maand voor sortering)
-            df_t1['MaandLabel'] = df_t1['Datum'].dt.to_period('M').dt.to_timestamp().dt.strftime('%d/%m/%Y')
-            
-            # We moeten 2 aggregaties doen: MEAN (voor kleur) en COUNT (voor hover)
-            # 1. MANAGEMENT
-            hm_mgmt_val = df_t1.pivot_table(index="Klas", columns="MaandLabel", values="Klasmanagement", aggfunc="mean")
-            hm_mgmt_cnt = df_t1.pivot_table(index="Klas", columns="MaandLabel", values="Klasmanagement", aggfunc="count")
-            
-            # 2. AANPAK
-            hm_didac_val = df_t1.pivot_table(index="Klas", columns="MaandLabel", values="Lesaanpak", aggfunc="mean")
-            hm_didac_cnt = df_t1.pivot_table(index="Klas", columns="MaandLabel", values="Lesaanpak", aggfunc="count")
-
-            if not hm_mgmt_val.empty:
-                col_h1, col_h2 = st.columns(2)
+        # --- LINKS: GRAFIEKEN ---
+        with col_content:
+            if not df_t1.empty:
+                # 1. HEATMAPS (Strak, even breed, geen datums)
+                st.caption("🔥 **Heatmap Evolutie** (Rood = Laag, Blauw = Hoog)")
                 
-                # Functie om de 'cleane' heatmap te maken
-                def create_clean_heatmap(df_val, df_cnt, title, show_scale=False):
-                    fig = go.Figure(data=go.Heatmap(
-                        z=df_val.values,
-                        x=df_val.columns,
-                        y=df_val.index,
-                        # Custom data meegeven voor de hover (de aantallen)
-                        customdata=df_cnt.values,
-                        colorscale="RdBu",
-                        zmin=1, zmax=5,
-                        showscale=show_scale,
-                        # Hover: Toon enkel aantal registraties
-                        hovertemplate="<b>%{y}</b><br>Datum: %{x}<br>Aantal registraties: %{customdata}<extra></extra>"
-                    ))
+                # Pivot Data
+                df_t1['Maand'] = df_t1['Datum'].dt.strftime('%Y-%m-%d') # Dagelijkse/Wekelijkse bins kunnen hier ook
+                
+                hm_mgmt = df_t1.pivot_table(index="Klas", columns="Maand", values="Klasmanagement", aggfunc="mean")
+                hm_didac = df_t1.pivot_table(index="Klas", columns="Maand", values="Lesaanpak", aggfunc="mean")
+                # Count voor de data validatie (maar tonen we niet in visual)
+                hm_count = df_t1.pivot_table(index="Klas", columns="Maand", values="Klasmanagement", aggfunc="count")
+
+                if not hm_mgmt.empty:
+                    col_h1, col_h2 = st.columns(2)
+                    
+                    def draw_silent_heatmap(df_val, df_cnt, title):
+                        fig = go.Figure(data=go.Heatmap(
+                            z=df_val.values,
+                            x=df_val.columns,
+                            y=df_val.index,
+                            customdata=df_cnt.values,
+                            colorscale="RdBu",
+                            zmin=1, zmax=5,
+                            showscale=False, # GEEN LEGENDA -> Garandeert gelijke breedte
+                            hovertemplate="<b>Aantal registraties: %{customdata}</b><extra></extra>" # Enkel aantal
+                        ))
+                        fig.update_layout(
+                            title=dict(text=title, x=0.5, font=dict(size=14)),
+                            xaxis=dict(showticklabels=False, title=None, ticks=""), # Geen datums
+                            yaxis=dict(title=None), # Geen as-titel
+                            margin=dict(l=0, r=0, t=30, b=0),
+                            height=150 + (len(df_val)*25),
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)'
+                        )
+                        return fig
+
+                    with col_h1:
+                        st.plotly_chart(draw_silent_heatmap(hm_mgmt, hm_count, "Klasmanagement"), use_container_width=True)
+                    with col_h2:
+                        st.plotly_chart(draw_silent_heatmap(hm_didac, hm_count, "Didactische Aanpak"), use_container_width=True)
+                
+                # 2. RIDGELINES (Artistiek, zonder tooltip, met mediaan)
+                st.markdown("---")
+                st.caption("🌊 **Spreiding van de scores** (Zwarte streep = Mediaan)")
+                
+                col_r1, col_r2 = st.columns(2)
+
+                def draw_artistic_median_ridge(df, col_name, title, color_hex):
+                    fig = go.Figure()
+                    classes = sorted(df['Klas'].unique())
+                    
+                    for k in classes:
+                        subset = df[df['Klas'] == k][col_name]
+                        median_val = subset.median()
+                        
+                        # De "Wolk" (Distributie)
+                        fig.add_trace(go.Violin(
+                            x=subset,
+                            y=[k]*len(subset),
+                            name=k,
+                            line_color=color_hex,
+                            fillcolor=color_hex,
+                            opacity=0.6,
+                            orientation='h',
+                            side='positive',
+                            width=1.8,
+                            points=False, # Geen puntjes
+                            hoverinfo='skip', # GEEN TOOLTIPS
+                            showlegend=False
+                        ))
+                        
+                        # De Mediaan (Handmatige streep)
+                        fig.add_trace(go.Scatter(
+                            x=[median_val, median_val],
+                            y=[k, k],
+                            mode='lines+text',
+                            line=dict(color='black', width=3),
+                            hoverinfo='skip',
+                            showlegend=False
+                        ))
+                        
+                        # Optioneel: Mediaan waarde als tekstje erbij? Nee, houdt het clean.
+
                     fig.update_layout(
-                        title=dict(text=title, x=0.5, font=dict(size=14)),
-                        xaxis=dict(title=None, side="bottom"), # Geen X-titel
-                        yaxis=dict(title=None),                # Geen Y-titel
-                        margin=dict(l=0, r=0, t=30, b=0),
-                        height=150 + (len(df_val)*25) # Dynamische hoogte
+                        title=dict(text=title, x=0.5),
+                        xaxis=dict(range=[0.5, 5.5], showgrid=True, gridcolor='#eee'),
+                        yaxis=dict(autorange="reversed", title=None),
+                        margin=dict(l=0, r=0, t=40, b=0),
+                        height=400 + (len(classes)*20),
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)'
                     )
                     return fig
 
-                with col_h1:
-                    st.plotly_chart(create_clean_heatmap(hm_mgmt_val, hm_mgmt_cnt, "Klasmanagement", False), use_container_width=True)
-                with col_h2:
-                    st.plotly_chart(create_clean_heatmap(hm_didac_val, hm_didac_cnt, "Didactische Aanpak", True), use_container_width=True)
+                with col_r1:
+                    st.plotly_chart(draw_artistic_median_ridge(df_t1, "Lesaanpak", "Didactische Aanpak", "#20c997"), use_container_width=True)
+                with col_r2:
+                    st.plotly_chart(draw_artistic_median_ridge(df_t1, "Klasmanagement", "Klasmanagement", "#e83e8c"), use_container_width=True)
+
             else:
-                st.info("Onvoldoende data voor heatmaps.")
-
-            # --- RIDGELINES (VERDELING) ---
-            st.markdown("#### 🌊 Verdeling van scores (met Mediaan)")
-            col_r1, col_r2 = st.columns(2)
-            
-            # Custom Ridgeline functie zonder tooltips, MET mediaan streep
-            def draw_clean_ridgeline(df, col_name, title, color_hex):
-                fig = go.Figure()
-                classes = sorted(df['Klas'].unique())
-                
-                for k in classes:
-                    subset = df[df['Klas'] == k][col_name]
-                    # Bereken mediaan voor deze klas
-                    median_val = subset.median()
-                    
-                    fig.add_trace(go.Violin(
-                        x=subset,
-                        y=[k]*len(subset), # Klas op Y-as
-                        name=k,
-                        orientation='h',
-                        side='positive', # Alleen bovenkant
-                        line_color=color_hex,
-                        fillcolor=color_hex,
-                        opacity=0.6,
-                        hoverinfo='skip', # GEEN TOOLTIP
-                        points=False, # Geen losse punten
-                        width=1.5
-                    ))
-                    
-                    # Voeg handmatig een streep toe voor de mediaan
-                    fig.add_trace(go.Scatter(
-                        x=[median_val, median_val],
-                        y=[k, k], # Trucje: Plotly lijnt dit niet makkelijk uit in Violin, dus we doen een streepje
-                        mode='lines',
-                        line=dict(color='black', width=3),
-                        hoverinfo='skip',
-                        showlegend=False
-                    ))
-                    # OPMERKING: Bovenstaande scatter is lastig exact IN de violin te krijgen. 
-                    # Beter alternatief in Plotly: Violin box aanzetten maar enkel mediaan tonen? 
-                    # We gebruiken de ingebouwde meanline functionaliteit van Violin voor de netste look:
-                
-                # RE-DO met betere Plotly methode:
-                fig = go.Figure()
-                for k in classes:
-                    subset = df[df['Klas'] == k][col_name]
-                    fig.add_trace(go.Violin(
-                        x=subset,
-                        y=[k]*len(subset),
-                        orientation='h',
-                        side='positive',
-                        line_color=color_hex,
-                        meanline_visible=True, # Dit toont het gemiddelde, helaas geen mediaan lijn native in 'positive' side zonder box.
-                        # Workaround: We gebruiken box=True maar verbergen alles behalve de mediaan lijn? Nee, te complex.
-                        # We gaan voor de Boxplot optie, die is cleaner voor statistiek.
-                        # Of we houden Violin en accepteren dat meanline (gemiddelde) de indicator is.
-                        # De gebruiker vroeg specifiek MEDIAAN.
-                    ))
-                
-                # Omdat Plotly Ridgelines (Violin) moeilijk enkel mediaan tonen zonder box, 
-                # kiezen we hier voor een "Violin met Box" die heel smal is.
-                fig = go.Figure()
-                for k in classes:
-                    fig.add_trace(go.Violin(
-                        x=df[df['Klas'] == k][col_name],
-                        name=k,
-                        line_color=color_hex,
-                        fillcolor=color_hex,
-                        opacity=0.6,
-                        orientation='h',
-                        side='positive',
-                        width=2,
-                        box_visible=True, # Dit toont de boxplot (en dus de mediaan streep!) in de 'buik' van de violin
-                        meanline_visible=False,
-                        hoverinfo='skip' # Geen tooltips
-                    ))
-
-                fig.update_layout(
-                    title=title,
-                    xaxis_title="Score (1-5)",
-                    showlegend=False,
-                    xaxis=dict(range=[0.5, 5.5], dtick=1),
-                    yaxis=dict(autorange="reversed"), # A-Z van boven naar beneden
-                    margin=dict(l=0, r=0, t=40, b=0),
-                    height=400 + (len(classes)*20)
-                )
-                return fig
-
-            with col_r1:
-                st.plotly_chart(draw_clean_ridgeline(df_t1, "Lesaanpak", "Didactiek (Wit streepje = Mediaan)", "#17a2b8"), use_container_width=True)
-            with col_r2:
-                st.plotly_chart(draw_clean_ridgeline(df_t1, "Klasmanagement", "Management (Wit streepje = Mediaan)", "#e83e8c"), use_container_width=True)
-
-        else:
-            st.warning("Geen data in deze periode.")
+                st.info("Geen data gevonden voor deze selectie.")
 
     # ==========================================
-    # TAB 2: WELZIJN (Strak Design)
+    # TAB 2: WELZIJN (Minimalistisch / Ink Ratio)
     # ==========================================
     with tab_wellbeing:
-        col_w_head, col_w_filter = st.columns([3, 1])
-        with col_w_head:
-            st.subheader("📈 Hartslag van het Team")
-        with col_w_filter:
-             w_period = st.selectbox("Periode:", ["Volledig schooljaar", "Afgelopen maand", "Afgelopen 2 weken"], key="tab2_filt")
+        # Filter (Compact)
+        w_col1, w_col2 = st.columns([4, 1])
+        with w_col1: st.subheader("De Menselijke Maat")
+        with w_col2: 
+            w_choice = st.selectbox("Periode", ["Volledig schooljaar", "Afgelopen maand"], label_visibility="collapsed", key="w_filt")
 
-        # Datum logica
-        today = pd.Timestamp.today()
-        if w_period == "Afgelopen maand":
+        # Data Filter
+        if w_choice == "Afgelopen maand":
             start_w = today - pd.Timedelta(days=30)
-        elif w_period == "Afgelopen 2 weken":
-            start_w = today - pd.Timedelta(days=14)
         else:
             start_w = pd.Timestamp(year=today.year if today.month >= 9 else today.year - 1, month=9, day=1)
-
+        
         df_w = df_wellbeing_raw[df_wellbeing_raw["Datum"] >= start_w].copy()
 
         if not df_w.empty:
             daily_avg = df_w.groupby("Datum")[["Energie", "Stress"]].mean().reset_index().sort_values("Datum")
             
-            # CLEAN PROFESSIONAL LOOK (Area + Line)
-            # Geen golven, geen neon. Gewoon strakke data.
+            # DESIGN: Minimalist Tufte Style
+            # Geen assen, geen grids, enkel de data.
             fig_trend = go.Figure()
 
-            # Energie als 'Achtergrond' (Area chart)
+            # Energie
             fig_trend.add_trace(go.Scatter(
-                x=daily_avg['Datum'], 
-                y=daily_avg['Energie'], 
-                mode='lines', 
-                name='Energie',
-                line=dict(color='#27ae60', width=2), # Professioneel groen
-                fill='tozeroy', 
-                fillcolor='rgba(39, 174, 96, 0.1)', # Zachte vulling
-                hovertemplate="Energie: %{y:.1f}<extra></extra>"
+                x=daily_avg['Datum'], y=daily_avg['Energie'],
+                mode='lines', name='Energie',
+                line=dict(color='#2ecc71', width=3, shape='spline'), # Frisse groene lijn
+                showlegend=False
             ))
-
-            # Stress als duidelijke lijn erbovenop
+            # Stress
             fig_trend.add_trace(go.Scatter(
-                x=daily_avg['Datum'], 
-                y=daily_avg['Stress'], 
-                mode='lines+markers', # Markers voor duidelijkheid datapunten
-                name='Stress',
-                line=dict(color='#c0392b', width=2), # Donkerrood
-                marker=dict(size=6),
-                hovertemplate="Stress: %{y:.1f}<extra></extra>"
+                x=daily_avg['Datum'], y=daily_avg['Stress'],
+                mode='lines', name='Stress',
+                line=dict(color='#e74c3c', width=3, shape='spline'), # Frisse rode lijn
+                showlegend=False
             ))
             
+            # Annotaties aan het EINDE van de lijn (ipv legende)
+            last_pt = daily_avg.iloc[-1]
+            fig_trend.add_annotation(x=last_pt['Datum'], y=last_pt['Energie'], text="Energie", showarrow=False, xanchor="left", xshift=10, font=dict(color="#2ecc71", size=14, family="Arial Black"))
+            fig_trend.add_annotation(x=last_pt['Datum'], y=last_pt['Stress'], text="Stress", showarrow=False, xanchor="left", xshift=10, font=dict(color="#e74c3c", size=14, family="Arial Black"))
+
             fig_trend.update_layout(
-                paper_bgcolor='white', 
-                plot_bgcolor='rgba(240,240,240,0.3)', # Heel licht grijs vlak
-                height=500,
-                hovermode="x unified",
-                xaxis=dict(showgrid=True, gridcolor='#eee'),
-                yaxis=dict(range=[0.5, 5.5], showgrid=True, gridcolor='#eee'),
-                legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center')
+                height=450,
+                xaxis=dict(showgrid=False, showline=False, zeroline=False, showticklabels=True, tickformat="%d %b"), # Enkel datums onderaan
+                yaxis=dict(showgrid=False, showline=False, zeroline=False, showticklabels=False, range=[0.5, 5.5]), # Geen Y-as labels
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(r=80) # Ruimte voor tekst rechts
             )
             
+            # Achtergrondband voor 'Gevaarzone' (Subtiel)
+            fig_trend.add_hrect(y0=4, y1=5.5, fillcolor="#e74c3c", opacity=0.03, line_width=0)
+            
             st.plotly_chart(fig_trend, use_container_width=True)
+            st.caption("*De grafiek toont enkel de trends. Annotaties duiden de huidige status aan. Rode achtergrond = Hoge stress zone.*")
+
         else:
             st.info("Geen data.")
 
     # ==========================================
-    # TAB 3: SANKEY (Met Vinkjes)
+    # TAB 3: SANKEY (Met Checkboxes)
     # ==========================================
     with tab_culture:
-        st.subheader("🦋 Sfeermeter: Oorzaak & Gevolg")
+        st.subheader("🦋 Oorzaak & Gevolg")
         
         col_sankey, col_filter_s = st.columns([3, 1])
 
-        # --- RECHTS: VINKJES (CHECKBOXES) ---
+        # --- RECHTS: FILTERS ---
         with col_filter_s:
             st.markdown("**📅 Periode**")
-            s_period = st.radio("Kies:", ["Volledig schooljaar", "Afgelopen maand"], label_visibility="collapsed", key="s_time")
+            s_period = st.radio("Kies:", ["Volledig schooljaar", "Afgelopen maand"], label_visibility="collapsed", key="s_p_rad")
             
             st.markdown("---")
             st.markdown("**🏫 Klassen**")
-            
-            # Container voor scrollbaarheid als het veel klassen zijn
             with st.container(height=400, border=True):
-                # We gebruiken een dictionary om de state van de checkboxes bij te houden
-                selected_classes_sankey = []
-                # Knopje alles aan/uit zou hier kunnen, maar we houden het simpel: standaard alles AAN
+                sel_classes_sankey = []
                 for k in all_classes:
-                    # Default True
-                    if st.checkbox(f"{k}", value=True, key=f"chk_{k}"):
-                        selected_classes_sankey.append(k)
+                    if st.checkbox(f"{k}", value=True, key=f"s_chk_{k}"):
+                        sel_classes_sankey.append(k)
 
         # --- LOGICA ---
-        today = pd.Timestamp.today()
         if s_period == "Afgelopen maand":
             start_s = today - pd.Timedelta(days=30)
         else:
             start_s = pd.Timestamp(year=today.year if today.month >= 9 else today.year - 1, month=9, day=1)
 
-        # Filteren
-        mask_s = (df_lessons_raw["Datum"] >= start_s) & (df_lessons_raw["Klas"].isin(selected_classes_sankey))
+        mask_s = (df_lessons_raw["Datum"] >= start_s) & (df_lessons_raw["Klas"].isin(sel_classes_sankey))
         df_sankey_filtered = df_lessons_raw.loc[mask_s].copy()
 
         # --- LINKS: GRAFIEK ---
         with col_sankey:
-            if not df_sankey_filtered.empty:
-                if len(selected_classes_sankey) == 0:
-                    st.error("Selecteer minstens één klas rechts.")
+            if not df_sankey_filtered.empty and len(sel_classes_sankey) > 0:
+                fig_s = draw_sankey_butterfly(df_sankey_filtered)
+                if fig_s:
+                    fig_s.update_layout(height=600, margin=dict(t=20, b=20))
+                    st.plotly_chart(fig_s, use_container_width=True)
                 else:
-                    fig_s = draw_sankey_butterfly(df_sankey_filtered)
-                    if fig_s:
-                        fig_s.update_layout(height=600, margin=dict(t=20, b=20))
-                        st.plotly_chart(fig_s, use_container_width=True)
-                    else:
-                        st.warning("Geen flows gevonden.")
+                    st.warning("Te weinig flows om te visualiseren.")
             else:
-                st.info("Geen data voor deze selectie.")
+                st.warning("Selecteer minstens één klas.")
