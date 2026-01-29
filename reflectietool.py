@@ -188,8 +188,27 @@ if user["role"] == "teacher":
             lesaanpak = st.slider("Lesaanpak", 1, 5, 3)
             klasmanagement = st.slider("Klasmanagement", 1, 5, 3)
 
-            positief = [m for m in POS_MOODS if st.checkbox(m, key=f"p_{m}")]
-            negatief = [m for m in NEG_MOODS if st.checkbox(m, key=f"n_{m}")]
+            st.write("---")
+            
+            # Maak twee kolommen aan
+            col_pos, col_neg = st.columns(2)
+
+            with col_pos:
+                st.markdown("### ✨ Positief")
+                # We maken een lijstje om de geselecteerde moods op te vangen
+                positief = []
+                for m in POS_MOODS:
+                    if st.checkbox(m, key=f"p_{m}"):
+                        positief.append(m)
+
+            with col_neg:
+                st.markdown("### ⚠️ Aandachtspunten")
+                negatief = []
+                for m in NEG_MOODS:
+                    if st.checkbox(m, key=f"n_{m}"):
+                        negatief.append(m)
+
+            st.write("---")
 
             if st.form_submit_button("Les opslaan"):
                 les_df.loc[len(les_df)] = [
