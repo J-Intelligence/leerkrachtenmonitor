@@ -687,8 +687,8 @@ elif user["role"] == "director":
     pass
     
     # ==========================================
-    # 4. PDF RAPPORT GENEREREN
-    # ==========================================
+            # 4. PDF RAPPORT GENEREREN
+            # ==========================================
             st.divider()
             
             if st.button("📄 Download Rapport (PDF)"):
@@ -702,6 +702,7 @@ elif user["role"] == "director":
                 story.append(Spacer(1, 12))
 
                 story.append(Paragraph("<b>📊 Analyse & Inzichten</b>", styles["Heading2"]))
+                
                 # Markdown ** verwijderen voor PDF
                 clean_text = analyse_tekst.replace("**", "")
                 for line in clean_text.split("\n"):
@@ -743,11 +744,11 @@ elif user["role"] == "director":
                         mime="application/pdf"
                     )
 
-# HIER EINDIGT DE TEACHER BLOCK. ZORG DAT DE VOLGENDE ELIF HIER BUITEN VALT (HELEMAAL LINKS)
+# --- LET OP: DEZE MOET HELEMAAL TEGEN DE LINKERKANTLIJN STAAN ---
 elif user["role"] == "director":
-    # ... code van directeur ...
+    st.title("Directie Dashboard")
+    # Hier komt de code voor de directeur...
     pass
-
 # =================================================
 # =============== DIRECTIE VIEW ===================
 # =================================================
