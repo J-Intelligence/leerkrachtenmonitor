@@ -6,3 +6,4 @@ wordcloud
 matplotlib
 st-gsheets-connection
 numpy
+seaborn
