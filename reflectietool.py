@@ -332,26 +332,75 @@ if user["role"] == "teacher":
     ])
 
     # -------------------------------------------------
-    # TAB 1 – DAGGEVOEL
+    # TAB 1 – DAGGEVOEL (Update: Rust & Legende)
     # -------------------------------------------------
     with tab1:
+        st.subheader("⚡ Hoe voel je je vandaag?")
+
         with st.form("daggevoel", clear_on_submit=True):
             d = st.date_input("Datum", date.today())
-            energie = st.slider("Energie", 1, 5, 3)
-            stress = st.slider("Stress", 1, 5, 3)
+            
+            st.markdown("---")
+
+            # 1. ENERGIE
+            # Dictionary koppelt Cijfer -> Tekst
+            energie_opties = {
+                1: "1. Uitgeput (Batterij leeg)",
+                2: "2. Moe",
+                3: "3. Neutraal / Gaat wel",
+                4: "4. Energiek",
+                5: "5. Bruisend (Vol energie!)"
+            }
+            
+            # Select slider toont de tekst, maar geeft het cijfer (key) terug
+            val_energie = st.select_slider(
+                "🔋 Hoe is je energiepeil?",
+                options=list(energie_opties.keys()),
+                format_func=lambda x: energie_opties[x], # Dit toont de tekst uit de lijst hierboven
+                value=3
+            )
+
+            st.write("") # Beetje witruimte
+
+            # 2. RUST (i.p.v. Stress)
+            # Hier is 5 heel goed (Zen) en 1 heel slecht (Onrustig)
+            rust_opties = {
+                1: "1. Erg onrustig / Gestresseerd",
+                2: "2. Gespannen",
+                3: "3. Neutraal",
+                4: "4. Ontspannen",
+                5: "5. Helemaal Zen (Zeer rustig)"
+            }
+
+            val_rust = st.select_slider(
+                "🧘 Hoeveel rust ervaar je?",
+                options=list(rust_opties.keys()),
+                format_func=lambda x: rust_opties[x],
+                value=3
+            )
+
+            st.markdown("---")
 
             if st.form_submit_button("Opslaan"):
+                # Slimme opslag: We berekenen Stress automatisch omgekeerd
+                # Zodat je oude grafieken (die Stress verwachten) blijven werken.
+                # Rust 5 = Stress 1. Rust 1 = Stress 5.
+                calc_stress = 6 - val_rust 
+
                 new_entry = pd.DataFrame({
                     "Email": [user["email"]],
                     "Datum": [str(d)],
-                    "Energie": [energie],
-                    "Stress": [stress]
+                    "Energie": [val_energie],
+                    "Rust": [val_rust],      # Nieuwe kolom voor de duidelijkheid
+                    "Stress": [calc_stress]  # Oude kolom voor backwards compatibility
                 })
+                
                 # Voeg toe aan de totale lijst en upload naar GSheets
                 updated_all_data = pd.concat([all_day_data, new_entry], ignore_index=True)
                 conn.update(spreadsheet=SHEET_URL, data=updated_all_data)
                 
-                st.success("Succesvol geregistreerd in de cloud ✔️")
+                st.success(f"Geregistreerd! Energie: {val_energie}/5 | Rust: {val_rust}/5")
+                time.sleep(1) # Korte pauze voor user feedback
                 st.rerun()
 
     # -------------------------------------------------
