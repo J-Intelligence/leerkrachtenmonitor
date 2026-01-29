@@ -515,105 +515,124 @@ if user["role"] == "teacher":
 # =================================================
 elif user["role"] == "director":
     st.header("🎓 Directie Dashboard (Anoniem)")
-    st.info("Dit dashboard toont geaggregeerde data van alle leerkrachten en klassen.")
+    st.info("Dit dashboard combineert live welzijnsdata (Google Sheets) met lesregistraties.")
 
-    # 1. Data laden van alle gebruikers
-    # Let op: Dit gebruikt de lokale CSV bestanden via de functie die je bovenaan definieerde
-    df_days_total, df_lessons_total = load_all_school_data()
+    # ---------------------------------------------------------
+    # STAP 1: DATA VERZAMELEN
+    # ---------------------------------------------------------
+    
+    # A. Lesdata laden (uit lokale CSV's via je helper functie)
+    _, df_lessons_total = load_all_school_data()
 
-    if df_days_total.empty and df_lessons_total.empty:
-        st.warning("Nog onvoldoende data beschikbaar in het systeem.")
-        st.stop()
+    # B. Welzijnsdata laden (LIVE uit Google Sheets)
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    try:
+        df_sheet = conn.read(spreadsheet=SHEET_URL, ttl=0)
+        
+        # Schoonmaken van Google Sheets data (belangrijk voor berekeningen!)
+        if not df_sheet.empty and "Datum" in df_sheet.columns:
+            df_sheet["Datum"] = pd.to_datetime(df_sheet["Datum"], errors='coerce')
+            df_sheet["Energie"] = pd.to_numeric(df_sheet["Energie"], errors='coerce')
+            df_sheet["Stress"] = pd.to_numeric(df_sheet["Stress"], errors='coerce')
+            # Verwijder ongeldige rijen
+            df_wellbeing_total = df_sheet.dropna(subset=["Datum", "Energie", "Stress"])
+        else:
+            df_wellbeing_total = pd.DataFrame(columns=["Datum", "Energie", "Stress", "Email"])
+            
+    except Exception as e:
+        st.error(f"Kan geen verbinding maken met Google Sheets: {e}")
+        df_wellbeing_total = pd.DataFrame(columns=["Datum", "Energie", "Stress"])
 
-    # --- KPI RIJ ---
+    # ---------------------------------------------------------
+    # STAP 2: KPI's BOVENAAN
+    # ---------------------------------------------------------
+    
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     
     with kpi1:
-        st.metric("Aantal Leerkrachten", df_days_total['Email'].nunique() if 'Email' in df_days_total.columns else 0)
+        # Aantal unieke e-mailadressen in de welzijnsdata
+        aantal_lk = df_wellbeing_total['Email'].nunique() if 'Email' in df_wellbeing_total.columns else 0
+        st.metric("Aantal Leerkrachten", aantal_lk)
     
     with kpi2:
-        # Gemiddelde energie (uit day files)
-        avg_energy = df_days_total['Energie'].mean() if not df_days_total.empty else 0
+        # Gemiddelde energie (uit Sheets data)
+        avg_energy = df_wellbeing_total['Energie'].mean() if not df_wellbeing_total.empty else 0
         st.metric("Gem. Energie Team", f"{avg_energy:.1f}/5")
 
     with kpi3:
-        # Gemiddelde lesaanpak (uit lesson files)
+        # Gemiddelde lesaanpak (uit lokale CSV data)
         avg_aanpak = df_lessons_total['Lesaanpak'].mean() if not df_lessons_total.empty else 0
         st.metric("Gem. Lesaanpak", f"{avg_aanpak:.1f}/5")
 
     with kpi4:
-        # Totaal aantal geregistreerde lessen
         st.metric("Lessen Geregistreerd", len(df_lessons_total))
 
     st.markdown("---")
 
-    # --- TABS VOOR VISUALISATIES ---
+    # ---------------------------------------------------------
+    # STAP 3: VISUALISATIES
+    # ---------------------------------------------------------
+
     tab_overview, tab_wellbeing, tab_culture = st.tabs([
         "📊 Klasstatistieken", 
-        "🦋 Sfeermeter (Sankey)", 
-        "🧘 Welzijn Team"
+        "🧘 Welzijn Team (Trend)",
+        "🦋 Sfeermeter (Sankey)" 
     ])
 
-    # TAB 1: Joyplots (Ridgeline) per klas
+    # --- TAB 1: Joyplots (Lessen) ---
     with tab_overview:
         st.subheader("Verdeling Lesaanpak & Management per Klas")
         if not df_lessons_total.empty:
             col_a, col_b = st.columns(2)
-            
             with col_a:
-                fig_aanpak = draw_ridgeline_artistic(
-                    df_lessons_total, 
-                    kolom="Lesaanpak", 
-                    titel="Didactische Aanpak", 
-                    basis_kleur_naam="Teal"
-                )
+                fig_aanpak = draw_ridgeline_artistic(df_lessons_total, "Lesaanpak", "Didactische Aanpak", "Teal")
                 if fig_aanpak: st.plotly_chart(fig_aanpak, use_container_width=True)
-            
             with col_b:
-                fig_mgmt = draw_ridgeline_artistic(
-                    df_lessons_total, 
-                    kolom="Klasmanagement", 
-                    titel="Klasmanagement", 
-                    basis_kleur_naam="Sunset"
-                )
+                fig_mgmt = draw_ridgeline_artistic(df_lessons_total, "Klasmanagement", "Klasmanagement", "Sunset")
                 if fig_mgmt: st.plotly_chart(fig_mgmt, use_container_width=True)
         else:
-            st.info("Geen lesdata beschikbaar.")
+            st.info("Nog geen lesregistraties beschikbaar.")
 
-    # TAB 2: Butterfly Sankey
-    with tab_culture:
-        st.subheader("Flow: Negatief gedrag ➔ Klas ➔ Positief gedrag")
-        st.markdown("*Hoe verhouden de aandachtspunten zich tot de positieve punten per klas?*")
-        
-        if not df_lessons_total.empty:
-            fig_sankey = draw_sankey_butterfly(df_lessons_total)
-            if fig_sankey:
-                st.plotly_chart(fig_sankey, use_container_width=True)
-            else:
-                st.warning("Niet genoeg label-data voor de Sankey grafiek.")
-        else:
-            st.info("Geen data.")
-
-    # TAB 3: Welzijn Team (Timeline)
+    # --- TAB 2: Welzijn Team (Line Chart) ---
     with tab_wellbeing:
-        st.subheader("Trendlijn Energie & Stress (Gemiddelde hele team)")
+        st.subheader("📈 Verloop Energie & Stress (Team Gemiddelde)")
         
-        if not df_days_total.empty:
-            # Zorg dat datum datetime is
-            df_days_total["Datum"] = pd.to_datetime(df_days_total["Datum"], errors='coerce')
+        if not df_wellbeing_total.empty:
+            # GROEPEREN: Bereken het gemiddelde per datum
+            daily_avg = df_wellbeing_total.groupby("Datum")[["Energie", "Stress"]].mean().reset_index()
             
-            # Groepeer per datum en neem het gemiddelde van alle leerkrachten
-            daily_avg = df_days_total.groupby("Datum")[["Energie", "Stress"]].mean().reset_index()
-            
+            # Sorteren op datum voor een correcte lijn
+            daily_avg = daily_avg.sort_values("Datum")
+
+            # Plotten
             fig_trend = px.line(
                 daily_avg, 
                 x="Datum", 
                 y=["Energie", "Stress"],
                 markers=True,
-                color_discrete_map={"Energie":"#2ecc71", "Stress":"#e74c3c"},
-                title="Evolutie welzijn over tijd"
+                color_discrete_map={"Energie":"#2ecc71", "Stress":"#e74c3c"}, # Groen en Rood
+                title="Gemiddeld welzijn van het team over tijd"
             )
-            fig_trend.update_layout(yaxis_range=[0.5, 5.5])
+            
+            # Y-as vastzetten op 1 tot 5
+            fig_trend.update_layout(yaxis_range=[0.5, 5.5], xaxis_title="Datum", yaxis_title="Score (1-5)")
+            
             st.plotly_chart(fig_trend, use_container_width=True)
+            
+            # Extra: Data tabel tonen (inklapbaar)
+            with st.expander("Bekijk ruwe cijfers (Gemiddelden)"):
+                st.dataframe(daily_avg.style.format({"Energie": "{:.2f}", "Stress": "{:.2f}"}))
         else:
-            st.info("Nog geen welzijnsdata van leerkrachten.")
+            st.info("Nog geen welzijnsdata beschikbaar in Google Sheets.")
+
+    # --- TAB 3: Sankey (Cultuur) ---
+    with tab_culture:
+        st.subheader("Flow: Negatief gedrag ➔ Klas ➔ Positief gedrag")
+        if not df_lessons_total.empty:
+            fig_sankey = draw_sankey_butterfly(df_lessons_total)
+            if fig_sankey:
+                st.plotly_chart(fig_sankey, use_container_width=True)
+            else:
+                st.warning("Niet genoeg data voor Sankey.")
+        else:
+            st.info("Geen data.")
