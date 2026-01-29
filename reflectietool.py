@@ -404,22 +404,59 @@ if user["role"] == "teacher":
                 st.rerun()
 
     # -------------------------------------------------
-    # TAB 2 – LESREGISTRATIE
+    # TAB 2 – LESREGISTRATIE (Update: Beschrijvende Sliders)
     # -------------------------------------------------
     with tab2:
+        st.subheader("📚 Lesregistratie")
+
         with st.form("lesregistratie", clear_on_submit=True):
             klas = st.selectbox("Klas", KLASSEN)
-            lesaanpak = st.slider("Lesaanpak", 1, 5, 3)
-            klasmanagement = st.slider("Klasmanagement", 1, 5, 3)
-
-            st.write("---")
             
-            # Maak twee kolommen aan
+            st.markdown("---")
+
+            # 1. LESAANPAK (Didactiek)
+            # We definiëren de tekst per cijfer
+            aanpak_opties = {
+                1: "1. Werkte helemaal niet (Stroef)",
+                2: "2. Matig / Kon beter",
+                3: "3. Gemiddeld (Voldoende)",
+                4: "4. Werkte goed",
+                5: "5. Sloeg enorm goed aan! (Top les)"
+            }
+            
+            lesaanpak = st.select_slider(
+                "🧑‍🏫 Hoe viel de lesaanpak?",
+                options=list(aanpak_opties.keys()), # De slider gebruikt de cijfers 1-5
+                format_func=lambda x: aanpak_opties[x], # Maar toont de tekst
+                value=3
+            )
+
+            st.write("") # Witruimte
+
+            # 2. KLASMANAGEMENT (Orde & Sfeer)
+            # We definiëren de tekst per cijfer
+            mgmt_opties = {
+                1: "1. De leerlingen namen het over (Chaos)",
+                2: "2. Onrustig / Moeizaam",
+                3: "3. Redelijk onder controle",
+                4: "4. Goed gemanaged",
+                5: "5. Ik heb deze klas enorm goed kunnen managen"
+            }
+
+            klasmanagement = st.select_slider(
+                "⚖️ Hoe verliep het klasmanagement?",
+                options=list(mgmt_opties.keys()),
+                format_func=lambda x: mgmt_opties[x],
+                value=3
+            )
+
+            st.markdown("---")
+            
+            # Maak twee kolommen aan voor tags
             col_pos, col_neg = st.columns(2)
 
             with col_pos:
                 st.markdown("### ✨ Positief")
-                # We maken een lijstje om de geselecteerde moods op te vangen
                 positief = []
                 for m in POS_MOODS:
                     if st.checkbox(m, key=f"p_{m}"):
@@ -432,9 +469,13 @@ if user["role"] == "teacher":
                     if st.checkbox(m, key=f"n_{m}"):
                         negatief.append(m)
 
-            st.write("---")
+            st.markdown("---")
 
             if st.form_submit_button("Les opslaan"):
+                # We voegen de data toe. 
+                # Omdat we keys() gebruikten in de slider, zijn 'lesaanpak' en 'klasmanagement' 
+                # gewoon getallen (int). We hoeven niets om te rekenen.
+                
                 les_df.loc[len(les_df)] = [
                     pd.Timestamp.now(),
                     klas,
@@ -444,9 +485,9 @@ if user["role"] == "teacher":
                     ", ".join(negatief)
                 ]
                 les_df.to_csv(LES_FILE, index=False)
-                st.success("Les opgeslagen ✔️")
+                st.success(f"Les in {klas} opgeslagen! (Aanpak: {lesaanpak}/5, Mgmt: {klasmanagement}/5)")
+                time.sleep(1)
                 st.rerun()
-
     # -------------------------------------------------
     # TAB 3 – VISUALISATIES
     # -------------------------------------------------
