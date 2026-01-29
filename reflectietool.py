@@ -9,6 +9,10 @@ from reportlab.lib.styles import getSampleStyleSheet
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from streamlit_gsheets import GSheetsConnection
+# --- VOEG DEZE TOE BIJ JE IMPORTS ---
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
 # --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
 def load_all_school_data():
