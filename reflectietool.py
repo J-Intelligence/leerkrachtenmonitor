@@ -440,35 +440,158 @@ if user["role"] == "teacher":
 
         # Hier roepen we de functie aan om hem te tonen
         render_lesregistratie()
-    # -------------------------------------------------
+# -------------------------------------------------
     # TAB 3 – VISUALISATIES & ANALYSE
     # -------------------------------------------------
     with tab3:
         st.header("📊 Visualisaties & Analyse")
 
-        # 1. WELLBEING TREND & FILTER (Bestaande code...)
-        # (Je bestaande code voor de grafieken hierboven laten staan)
-        # ... [Plaats hier je bestaande code voor Wellbeing Trend en Filter Logica] ...
+        # --- HULPFUNCTIE VOOR WORDCLOUD (Hier gedefinieerd zodat hij overal in Tab 3 werkt) ---
+        def generate_wordcloud_plot(dataframe):
+            # Veiligheidscheck: kolommen moeten bestaan
+            if "Positief" not in dataframe.columns or "Negatief" not in dataframe.columns:
+                return None
+                
+            pos_s = dataframe["Positief"].dropna().astype(str).str.split(",").explode().str.strip()
+            neg_s = dataframe["Negatief"].dropna().astype(str).str.split(",").explode().str.strip()
+            
+            # Filter lege strings en strings korter dan 2 tekens
+            pos_s = pos_s[pos_s.str.len() > 1]
+            neg_s = neg_s[neg_s.str.len() > 1]
 
-        # ... (Even ter referentie: hier stond je Lesanalyse filter code) ... 
-        # Zorg dat df_filtered beschikbaar is.
+            all_lbls = pd.concat([
+                pd.DataFrame({"Label": pos_s, "Type": "Positief"}),
+                pd.DataFrame({"Label": neg_s, "Type": "Negatief"}),
+            ], ignore_index=True)
+
+            if not all_lbls.empty:
+                counts = all_lbls.groupby(["Label", "Type"]).size().reset_index(name="Aantal")
+                words_freq = dict(zip(counts["Label"], counts["Aantal"]))
+                
+                # Kleurfunctie: Groen voor positief, Rood voor negatief
+                color_map = {row["Label"]: ("#2ecc71" if row["Type"] == "Positief" else "#e74c3c") for _, row in counts.iterrows()}
+
+                wc = WordCloud(width=800, height=350, background_color="white", random_state=42).generate_from_frequencies(words_freq)
+                
+                fig_wc, ax = plt.subplots(figsize=(10, 4))
+                ax.imshow(wc.recolor(color_func=lambda word, **kwargs: color_map.get(word, "black")), interpolation="bilinear")
+                ax.axis("off")
+                return fig_wc
+            return None
+
+        # ==========================================
+        # 1. WELLBEING TREND (ENERGIE vs RUST)
+        # ==========================================
+        st.subheader("🧘 Jouw Welzijnstrend")
         
-        # Omdat de code hierboven niet veranderd hoeft te worden, focussen we op de Klasvergelijker.
-        # Voeg deze functie toe onderaan Tab 3 (vervang het oude blok 'Klas Vergelijker'):
+        plot_df = day_df.copy()
+        plot_df["Datum"] = pd.to_datetime(plot_df["Datum"], errors="coerce")
+        plot_df = plot_df.dropna(subset=["Datum"]).sort_values("Datum")
+
+        if not plot_df.empty:
+            # Bereken Rust als het er niet is (Legacy support)
+            if "Rust" not in plot_df.columns and "Stress" in plot_df.columns:
+                plot_df["Rust"] = 6 - pd.to_numeric(plot_df["Stress"], errors='coerce')
+
+            # Zeker zijn van numerieke waarden
+            for col in ["Energie", "Rust"]:
+                if col in plot_df.columns:
+                    plot_df[col] = pd.to_numeric(plot_df[col], errors='coerce')
+
+            # De Line Chart
+            fig = px.line(
+                plot_df,
+                x="Datum",
+                y=["Energie", "Rust"], 
+                markers=True,
+                color_discrete_map={"Energie": "#2ecc71", "Rust": "#3498db"}, # Groen & Blauw
+                title="Energie & Rust Balans"
+            )
+            
+            # Styling van de grafiek
+            fig.update_layout(
+                yaxis_range=[0.5, 5.5],
+                xaxis_title=None,
+                legend_title=None,
+                height=350,
+                margin=dict(l=20, r=20, t=40, b=20),
+                plot_bgcolor="rgba(0,0,0,0)", # Transparante achtergrond
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            fig.update_yaxes(showgrid=True, gridcolor='lightgray')
+            fig.update_xaxes(showgrid=False)
+
+            # RODE BAND (Gevarenzone: onder de 2.5 is oppassen)
+            fig.add_hrect(y0=0, y1=2.5, fillcolor="#e74c3c", opacity=0.1, line_width=0, annotation_text="⚠️ Let op", annotation_position="bottom right")
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Nog geen daggevoel geregistreerd.")
 
         st.divider()
+
+        # ==========================================
+        # 2. FILTER & ALGEMENE ANALYSE
+        # ==========================================
+        st.subheader("🔎 Lesanalyse (Algemeen)")
+        
+        f_col1, f_col2 = st.columns([3, 1])
+        with f_col2:
+            filter_periode = st.selectbox(
+                "📅 Periode:",
+                ["Volledig Schooljaar", "Afgelopen Maand", "Afgelopen 2 Weken"],
+                index=0
+            )
+
+        # Pas filter toe op les_df
+        les_df["Datum"] = pd.to_datetime(les_df["Datum"], errors='coerce')
+        df_filtered = les_df.copy()
+        
+        now = pd.Timestamp.now()
+        if filter_periode == "Afgelopen Maand":
+            start_date = now - pd.Timedelta(days=30)
+            df_filtered = df_filtered[df_filtered["Datum"] >= start_date]
+        elif filter_periode == "Afgelopen 2 Weken":
+            start_date = now - pd.Timedelta(days=14)
+            df_filtered = df_filtered[df_filtered["Datum"] >= start_date]
+        
+        if not df_filtered.empty:
+            # Metrics
+            avg_aanpak = df_filtered["Lesaanpak"].mean()
+            avg_mgmt = df_filtered["Klasmanagement"].mean()
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Geregistreerde Lessen", len(df_filtered))
+            m2.metric("Gem. Lesaanpak", f"{avg_aanpak:.2f} / 5")
+            m3.metric("Gem. Klasmanagement", f"{avg_mgmt:.2f} / 5")
+
+            # De Algemene WordCloud
+            st.write("###### ☁️ Trefwoordenwolk (Alle klassen in selectie)")
+            wc_fig = generate_wordcloud_plot(df_filtered)
+            if wc_fig:
+                st.pyplot(wc_fig)
+            else:
+                st.caption("Nog niet genoeg tags voor een wordcloud.")
+
+        else:
+            st.warning("Geen data gevonden voor deze periode.")
+
+        st.divider()
+
+        # ==========================================
+        # 3. KLAS VERGELIJKER (FRAGMENT)
+        # ==========================================
         st.subheader("⚔️ Vergelijk 2 Klassen")
 
+        # De fragment decorator zorgt dat alleen DIT deel ververst en niet de hele pagina
         @st.fragment
         def render_klas_vergelijker():
-            # We laden de data opnieuw of gebruiken de globale les_df
-            # Voor veiligheid filteren we hier lokaal even opnieuw of gebruiken we de globale df
-            local_df = les_df.copy() # Of df_filtered als die globaal beschikbaar is
+            # We gebruiken de globale les_df zodat we altijd alle data hebben om te vergelijken
+            local_df = les_df.copy()
             
             if not local_df.empty:
                 avail_classes = sorted(local_df["Klas"].unique())
-                # De multiselect triggert nu alleen een update van DIT blokje, niet de hele pagina
-                sel_classes = st.multiselect("Kies 2 klassen:", avail_classes, max_selections=2)
+                sel_classes = st.multiselect("Kies 2 klassen om te vergelijken:", avail_classes, max_selections=2)
 
                 if len(sel_classes) == 2:
                     c1, c2 = st.columns(2)
@@ -476,21 +599,26 @@ if user["role"] == "teacher":
                     for i, (col, k_name) in enumerate(zip([c1, c2], sel_classes)):
                         with col:
                             st.markdown(f"### 🏫 {k_name}")
+                            
+                            # Filter data voor deze specifieke klas
                             subset = local_df[local_df["Klas"] == k_name]
                             
                             if not subset.empty:
+                                # 1. Cijfers
                                 s_aanpak = subset["Lesaanpak"].mean()
                                 s_mgmt = subset["Klasmanagement"].mean()
                                 st.info(f"**Aanpak:** {s_aanpak:.1f} | **Mgmt:** {s_mgmt:.1f}")
 
-                                # Mirror Plot
+                                # 2. Mirror Plot
                                 fig_mirror = go.Figure()
+                                # Aanpak (Groen)
                                 fig_mirror.add_trace(go.Violin(
                                     x=subset['Lesaanpak'], y=[k_name] * len(subset),
                                     side='positive', orientation='h',
                                     line_color='#00CC96', fillcolor='#00CC96', opacity=0.6,
                                     name="Aanpak"
                                 ))
+                                # Mgmt (Paars)
                                 fig_mirror.add_trace(go.Violin(
                                     x=subset['Klasmanagement'], y=[k_name] * len(subset),
                                     side='negative', orientation='h',
@@ -505,18 +633,22 @@ if user["role"] == "teacher":
                                 )
                                 st.plotly_chart(fig_mirror, use_container_width=True)
                                 
-                                # Wordcloud (hergebruik je generate_wordcloud_plot functie)
-                                # wc_k = generate_wordcloud_plot(subset)
-                                # if wc_k: st.pyplot(wc_k)
+                                # 3. WordCloud PER KLAS (Hersteld!)
+                                st.markdown(f"**Tags voor {k_name}:**")
+                                wc_k = generate_wordcloud_plot(subset)
+                                if wc_k:
+                                    st.pyplot(wc_k)
+                                else:
+                                    st.caption("Geen tags beschikbaar.")
 
                             else:
                                 st.warning("Geen data.")
                 elif len(sel_classes) == 1:
                     st.info("Selecteer nog een tweede klas.")
                 else:
-                    st.info("Selecteer klassen via het menu.")
+                    st.info("Selecteer klassen via het menu hierboven.")
         
-        # Roep de functie aan
+        # Roep de fragment-functie aan
         render_klas_vergelijker()
     # -------------------------------------------------
     # TAB 4 – MAANDRAPPORT
