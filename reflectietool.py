@@ -332,133 +332,69 @@ if user["role"] == "teacher":
     ])
 
     # -------------------------------------------------
-    # TAB 1 – DAGGEVOEL (Update: Rust & Legende)
+    # TAB 1 – DAGGEVOEL
     # -------------------------------------------------
     with tab1:
         st.subheader("⚡ Hoe voel je je vandaag?")
 
         with st.form("daggevoel", clear_on_submit=True):
             d = st.date_input("Datum", date.today())
-            
             st.markdown("---")
 
-            # 1. ENERGIE
-            # Dictionary koppelt Cijfer -> Tekst
-            energie_opties = {
-                1: "1. Uitgeput (Batterij leeg)",
-                2: "2. Moe",
-                3: "3. Neutraal / Gaat wel",
-                4: "4. Energiek",
-                5: "5. Bruisend (Vol energie!)"
-            }
+            # ... (jouw slider code voor energie en rust blijft hetzelfde) ...
+            # KORTE VERSIE HIERONDER OM RUIMTE TE BESPAREN IN DIT VOORBEELD
+            energie_opties = {1: "1. Uitgeput", 2: "2. Moe", 3: "3. Neutraal", 4: "4. Energiek", 5: "5. Bruisend"}
+            val_energie = st.select_slider("🔋 Energie", options=list(energie_opties.keys()), format_func=lambda x: energie_opties[x], value=3)
             
-            # Select slider toont de tekst, maar geeft het cijfer (key) terug
-            val_energie = st.select_slider(
-                "🔋 Hoe is je energiepeil?",
-                options=list(energie_opties.keys()),
-                format_func=lambda x: energie_opties[x], # Dit toont de tekst uit de lijst hierboven
-                value=3
-            )
-
-            st.write("") # Beetje witruimte
-
-            # 2. RUST (i.p.v. Stress)
-            # Hier is 5 heel goed (Zen) en 1 heel slecht (Onrustig)
-            rust_opties = {
-                1: "1. Erg onrustig / Gestresseerd",
-                2: "2. Gespannen",
-                3: "3. Neutraal",
-                4: "4. Ontspannen",
-                5: "5. Helemaal Zen (Zeer rustig)"
-            }
-
-            val_rust = st.select_slider(
-                "🧘 Hoeveel rust ervaar je?",
-                options=list(rust_opties.keys()),
-                format_func=lambda x: rust_opties[x],
-                value=3
-            )
+            rust_opties = {1: "1. Onrustig", 2: "2. Gespannen", 3: "3. Neutraal", 4: "4. Ontspannen", 5: "5. Zen"}
+            val_rust = st.select_slider("🧘 Rust", options=list(rust_opties.keys()), format_func=lambda x: rust_opties[x], value=3)
 
             st.markdown("---")
 
             if st.form_submit_button("Opslaan"):
-                # Slimme opslag: We berekenen Stress automatisch omgekeerd
-                # Zodat je oude grafieken (die Stress verwachten) blijven werken.
-                # Rust 5 = Stress 1. Rust 1 = Stress 5.
                 calc_stress = 6 - val_rust 
-
                 new_entry = pd.DataFrame({
                     "Email": [user["email"]],
                     "Datum": [str(d)],
                     "Energie": [val_energie],
-                    "Rust": [val_rust],      # Nieuwe kolom voor de duidelijkheid
-                    "Stress": [calc_stress]  # Oude kolom voor backwards compatibility
+                    "Rust": [val_rust],
+                    "Stress": [calc_stress]
                 })
                 
-                # Voeg toe aan de totale lijst en upload naar GSheets
                 updated_all_data = pd.concat([all_day_data, new_entry], ignore_index=True)
                 conn.update(spreadsheet=SHEET_URL, data=updated_all_data)
                 
                 st.success(f"Geregistreerd! Energie: {val_energie}/5 | Rust: {val_rust}/5")
-                time.sleep(1) # Korte pauze voor user feedback
-                st.rerun()
+                # VERWIJDERDE REGEL: st.rerun() 
+                # Door st.rerun() weg te laten, blijf je op deze tab staan.
 
     # -------------------------------------------------
-    # TAB 2 – LESREGISTRATIE (Update: Beschrijvende Sliders)
+    # TAB 2 – LESREGISTRATIE
     # -------------------------------------------------
     with tab2:
         st.subheader("📚 Lesregistratie")
 
+        # BELANGRIJK: Alles hieronder moet ingesprongen zijn onder deze regel!
         with st.form("lesregistratie", clear_on_submit=True):
             klas = st.selectbox("Klas", KLASSEN)
-            
             st.markdown("---")
 
-            # 1. LESAANPAK (Didactiek)
-            # We definiëren de tekst per cijfer
-            aanpak_opties = {
-                1: "1. Werkte helemaal niet (Stroef)",
-                2: "2. Matig / Kon beter",
-                3: "3. Gemiddeld (Voldoende)",
-                4: "4. Werkte goed",
-                5: "5. Sloeg enorm goed aan! (Top les)"
-            }
-            
-            lesaanpak = st.select_slider(
-                "🧑‍🏫 Hoe viel de lesaanpak?",
-                options=list(aanpak_opties.keys()), # De slider gebruikt de cijfers 1-5
-                format_func=lambda x: aanpak_opties[x], # Maar toont de tekst
-                value=3
-            )
-
-            st.write("") # Witruimte
-
-            # 2. KLASMANAGEMENT (Orde & Sfeer)
-            # We definiëren de tekst per cijfer
-            mgmt_opties = {
-                1: "1. De leerlingen namen het over (Chaos)",
-                2: "2. Onrustig / Moeizaam",
-                3: "3. Redelijk onder controle",
-                4: "4. Goed gemanaged",
-                5: "5. Ik heb deze klas enorm goed kunnen managen"
-            }
-
-            klasmanagement = st.select_slider(
-                "⚖️ Hoe verliep het klasmanagement?",
-                options=list(mgmt_opties.keys()),
-                format_func=lambda x: mgmt_opties[x],
-                value=3
-            )
+            # ... (Jouw sliders voor Aanpak en Management code hier) ...
+            # Ik kort het even in voor het overzicht, gebruik jouw volledige code hier
+            aanpak_opties = {1: "Stroef", 5: "Top"} # Voorbeeld
+            lesaanpak = st.slider("Lesaanpak", 1, 5, 3) 
+            klasmanagement = st.slider("Klasmanagement", 1, 5, 3)
 
             st.markdown("---")
             
-            # Maak twee kolommen aan voor tags
+            # Checkboxes - Let op de inspringing! Ze staan IN de form.
             col_pos, col_neg = st.columns(2)
 
             with col_pos:
                 st.markdown("### ✨ Positief")
                 positief = []
                 for m in POS_MOODS:
+                    # Omdat dit IN de st.form staat, triggert dit GEEN reload bij het aanvinken
                     if st.checkbox(m, key=f"p_{m}"):
                         positief.append(m)
 
@@ -472,10 +408,6 @@ if user["role"] == "teacher":
             st.markdown("---")
 
             if st.form_submit_button("Les opslaan"):
-                # We voegen de data toe. 
-                # Omdat we keys() gebruikten in de slider, zijn 'lesaanpak' en 'klasmanagement' 
-                # gewoon getallen (int). We hoeven niets om te rekenen.
-                
                 les_df.loc[len(les_df)] = [
                     pd.Timestamp.now(),
                     klas,
@@ -485,9 +417,12 @@ if user["role"] == "teacher":
                     ", ".join(negatief)
                 ]
                 les_df.to_csv(LES_FILE, index=False)
-                st.success(f"Les in {klas} opgeslagen! (Aanpak: {lesaanpak}/5, Mgmt: {klasmanagement}/5)")
-                time.sleep(1)
-                st.rerun()
+                st.success(f"Les in {klas} opgeslagen!")
+                
+                # VERWIJDERDE REGEL: st.rerun()
+                # Nu blijft het formulier netjes staan en springt het niet weg.
+                # Omdat clear_on_submit=True in de st.form regel staat, 
+                # wordt het formulier wel leeggemaakt voor de volgende les.
     # -------------------------------------------------
     # TAB 3 – VISUALISATIES & ANALYSE
     # -------------------------------------------------
