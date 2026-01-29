@@ -372,7 +372,6 @@ if user["role"] == "teacher":
     # TAB 2 – LESREGISTRATIE
     # -------------------------------------------------
     with tab2:
-        # We zetten dit in een functie met @st.fragment om het verspringen te voorkomen
         @st.fragment
         def render_lesregistratie():
             st.subheader("📚 Lesregistratie")
@@ -381,25 +380,44 @@ if user["role"] == "teacher":
                 klas = st.selectbox("Klas", KLASSEN)
                 st.markdown("---")
 
-                # De beschrijvingen die je miste:
-                aanpak_opties = {1: "Stroef", 5: "Top"}
+                # DEFINITIE VAN DE SCHALEN (Tekst die op de slider verschijnt)
+                # We gebruiken een lijst zodat de slider deze stappen toont.
+                opties_aanpak = [
+                    "1: Stroef", 
+                    "2: Moeizaam", 
+                    "3: Voldoende", 
+                    "4: Goed", 
+                    "5: Top"
+                ]
                 
+                opties_mgmt = [
+                    "1: Onrustig", 
+                    "2: Rommelig", 
+                    "3: Rustig", 
+                    "4: Werkzaam", 
+                    "5: Uitstekend"
+                ]
+
                 # SLIDER 1: Lesaanpak
                 st.write(" **Hoe verliep de lesaanpak?**")
-                lesaanpak = st.slider("Schaal (1-5)", 1, 5, 3, key="slider_aanpak", label_visibility="collapsed")
-                # Hier tonen we de tekst "Stroef" en "Top" onder de slider
-                c1, c2 = st.columns([1, 1])
-                c1.caption(f"1: {aanpak_opties[1]}")
-                c2.caption(f"5: {aanpak_opties[5]}", unsafe_allow_html=True) # Rechts uitlijnen is lastig met caption, maar dit werkt prima
+                # We gebruiken select_slider zodat de tekst direct zichtbaar is bij het schuiven
+                aanpak_input = st.select_slider(
+                    "Lesaanpak", 
+                    options=opties_aanpak, 
+                    value=opties_aanpak[2], # Default op 3
+                    label_visibility="collapsed"
+                )
                 
                 st.markdown("") # Witregel
 
                 # SLIDER 2: Klasmanagement
                 st.write(" **Hoe was het klasmanagement?**")
-                klasmanagement = st.slider("Schaal (1-5)", 1, 5, 3, key="slider_mgmt", label_visibility="collapsed")
-                c3, c4 = st.columns([1, 1])
-                c3.caption(f"1: {aanpak_opties[1]}")
-                c4.caption(f"5: {aanpak_opties[5]}")
+                mgmt_input = st.select_slider(
+                    "Klasmanagement", 
+                    options=opties_mgmt, 
+                    value=opties_mgmt[2], # Default op 3
+                    label_visibility="collapsed"
+                )
 
                 st.markdown("---")
                 
@@ -424,21 +442,23 @@ if user["role"] == "teacher":
 
                 # Submit knop
                 if st.form_submit_button("Les opslaan"):
-                    # Let op: we gebruiken de globale les_df. 
-                    # Zorg dat les_df goed geladen is bovenin je script.
+                    # CONVERSIE: We moeten de tekst ("5: Top") terug omzetten naar een getal (5)
+                    # We pakken het eerste karakter van de string en maken er een int van.
+                    lesaanpak_cijfer = int(aanpak_input.split(":")[0])
+                    klasmanagement_cijfer = int(mgmt_input.split(":")[0])
+
                     les_df.loc[len(les_df)] = [
                         pd.Timestamp.now(),
                         klas,
-                        lesaanpak,
-                        klasmanagement,
+                        lesaanpak_cijfer,      # Het getal opslaan
+                        klasmanagement_cijfer, # Het getal opslaan
                         ", ".join(positief),
                         ", ".join(negatief)
                     ]
                     les_df.to_csv(LES_FILE, index=False)
                     st.success(f"Les in {klas} opgeslagen!")
-                    # Geen st.rerun() nodig, st.fragment handelt de update af!
-
-        # Hier roepen we de functie aan om hem te tonen
+        
+        # Roep de functie aan
         render_lesregistratie()
 # -------------------------------------------------
     # TAB 3 – VISUALISATIES & ANALYSE
