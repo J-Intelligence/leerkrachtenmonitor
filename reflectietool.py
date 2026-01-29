@@ -332,7 +332,7 @@ if user["role"] == "teacher":
         "🧠 Daggevoel",
         "📝 Lesregistratie",
         "📊 Visualisaties",
-        "📄 Maandrapport"
+        "📄 rapport genereren"
     ])
 
     # -------------------------------------------------
@@ -686,204 +686,24 @@ elif user["role"] == "director":
     # (Hier komt jouw bestaande code voor de directeur)
     pass
     
-    # -------------------------------------------------
-    # TAB 4 – RAPPORT & INZICHTEN
-    # -------------------------------------------------
-    with tab4:
-        st.header("📑 Persoonlijk Rapport & Analyse")
-        st.markdown("Genereer inzichten over jouw welzijn en lespraktijk over een specifieke periode.")
-
-        # 1. SELECTIE PERIODE
-        r_col1, r_col2 = st.columns([2, 1])
-        with r_col1:
-            rapport_periode = st.selectbox(
-                "📅 Selecteer periode:",
-                ["Laatste 2 weken", "Laatste 30 dagen", "Huidig Schooljaar"],
-                index=1
-            )
-        
-        # Data filteren op basis van selectie
-        now = pd.Timestamp.now()
-        start_date = now # fallback
-        
-        if rapport_periode == "Laatste 2 weken":
-            start_date = now - pd.Timedelta(days=14)
-        elif rapport_periode == "Laatste 30 dagen":
-            start_date = now - pd.Timedelta(days=30)
-        elif rapport_periode == "Huidig Schooljaar":
-            # Startdatum schooljaar (bijv. 1 sept van vorig jaar als we nu voor sept zitten, anders dit jaar)
-            if now.month < 9:
-                start_date = pd.Timestamp(year=now.year - 1, month=9, day=1)
-            else:
-                start_date = pd.Timestamp(year=now.year, month=9, day=1)
-
-        # Filter de dataframes
-        # Zorg dat datumkolommen datetime zijn
-        day_df["Datum"] = pd.to_datetime(day_df["Datum"], errors="coerce")
-        les_df["Datum"] = pd.to_datetime(les_df["Datum"], errors="coerce")
-
-        r_day_df = day_df[day_df["Datum"] >= start_date].copy()
-        r_les_df = les_df[les_df["Datum"] >= start_date].copy()
-
-        if r_day_df.empty and r_les_df.empty:
-            st.info("Geen gegevens gevonden voor deze periode.")
-        else:
-            # ==========================================
-            # 2. AUTOMATISCHE "AI" ANALYSE (Regelgebaseerd)
-            # ==========================================
-            def generate_smart_feedback(df_d, df_l):
-                feedback = []
-                
-                # A. Welzijn Analyse
-                if not df_d.empty:
-                    avg_energy = df_d["Energie"].mean()
-                    avg_stress = df_d["Stress"].mean()
-                    
-                    if avg_energy > 3.8:
-                        feedback.append("🚀 **Energie:** Je energiepeil is uitstekend deze periode. Houden zo!")
-                    elif avg_energy < 2.5:
-                        feedback.append("🔋 **Energie:** Je energie is aan de lage kant. Let op je herstelmomenten.")
-                    
-                    if avg_stress > 3.5:
-                        feedback.append("🤯 **Stress:** Je stressniveau is hoog. Probeer te kijken of dit werkdruk of klasgebonden is.")
-                    elif avg_stress < 2.0:
-                        feedback.append("🧘 **Stress:** Je bent lekker ontspannen. Goed bezig!")
-
-                    # Weekdag patroon
-                    df_d['Weekdag'] = df_d['Datum'].dt.day_name()
-                    stress_per_dag = df_d.groupby('Weekdag')['Stress'].mean()
-                    if not stress_per_dag.empty:
-                        zwaarste_dag = stress_per_dag.idxmax()
-                        feedback.append(f"📅 **Patroon:** {zwaarste_dag} lijkt gemiddeld je meest stressvolle dag te zijn.")
-
-                # B. Les Analyse
-                if not df_l.empty:
-                    top_klas = df_l.groupby("Klas")["Klasmanagement"].mean().idxmax()
-                    flop_klas = df_l.groupby("Klas")["Klasmanagement"].mean().idxmin()
-                    
-                    if top_klas == flop_klas:
-                         feedback.append(f"🏫 **Klassen:** Je hebt vooral data van {top_klas}.")
-                    else:
-                        feedback.append(f"🏆 **Succes:** Het loopt het lekkerst in **{top_klas}**.")
-                        feedback.append(f"🛠️ **Werkpunt:** In **{flop_klas}** kost het management de meeste moeite.")
-                
-                if not feedback:
-                    return "Nog niet genoeg data voor een patroonanalyse."
-                
-                return "\n\n".join(feedback)
-
-            # Genereer de tekst
-            analyse_tekst = generate_smart_feedback(r_day_df, r_les_df)
-
-            with st.expander("🤖 Klik hier voor jouw AI-analyse", expanded=True):
-                st.markdown(analyse_tekst)
-
-            st.divider()
-
-            # ==========================================
-            # 3. DASHBOARD VISUALS
-            # ==========================================
-            
-            # KPI RIJ
-            k1, k2, k3, k4 = st.columns(4)
-            gem_en = r_day_df["Energie"].mean() if not r_day_df.empty else 0
-            gem_str = r_day_df["Stress"].mean() if not r_day_df.empty else 0
-            gem_les = r_les_df["Lesaanpak"].mean() if not r_les_df.empty else 0
-            aantal_l = len(r_les_df)
-
-            k1.metric("Gem. Energie", f"{gem_en:.1f}/5", delta_color="normal")
-            k2.metric("Gem. Stress", f"{gem_str:.1f}/5", delta_color="inverse") # Inverse want laag is goed
-            k3.metric("Gem. Lesaanpak", f"{gem_les:.1f}/5")
-            k4.metric("Aantal Lessen", aantal_l)
-
-            # KOLOMMEN VOOR GRAFIEKEN
-            g_col1, g_col2 = st.columns(2)
-
-            with g_col1:
-                st.markdown("#### 📅 Welzijn per Weekdag")
-                if not r_day_df.empty:
-                    # Zorg voor correcte sortering van weekdagen
-                    days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                    r_day_df['DayName'] = r_day_df['Datum'].dt.day_name()
-                    
-                    daily_stats = r_day_df.groupby('DayName')[['Energie', 'Stress']].mean().reset_index()
-                    
-                    # Sorteer de dataframe op basis van de days_order lijst
-                    daily_stats['DayName'] = pd.Categorical(daily_stats['DayName'], categories=days_order, ordered=True)
-                    daily_stats = daily_stats.sort_values('DayName')
-
-                    fig_days = px.bar(
-                        daily_stats, 
-                        x="DayName", 
-                        y=["Energie", "Stress"],
-                        barmode='group',
-                        color_discrete_map={"Energie": "#2ecc71", "Stress": "#e74c3c"},
-                        height=300
-                    )
-                    fig_days.update_layout(xaxis_title=None, yaxis_title="Score (1-5)", legend_title=None)
-                    st.plotly_chart(fig_days, use_container_width=True)
-                else:
-                    st.caption("Geen welzijnsdata.")
-
-            with g_col2:
-                st.markdown("#### 🎯 De Klassen-Matrix")
-                st.caption("Rechtsboven = Flow | Linksonder = Moeizaam")
-                if not r_les_df.empty:
-                    # Group by klas
-                    class_stats = r_les_df.groupby("Klas")[["Lesaanpak", "Klasmanagement"]].mean().reset_index()
-                    class_stats["Aantal"] = r_les_df.groupby("Klas")["Klas"].count().values # Voor bolgrootte
-                    
-                    fig_matrix = px.scatter(
-                        class_stats,
-                        x="Klasmanagement",
-                        y="Lesaanpak",
-                        color="Klas",
-                        size="Aantal",
-                        text="Klas",
-                        hover_name="Klas",
-                        size_max=40,
-                        height=300
-                    )
-                    # Assen vastzetten op 1-5 voor context
-                    fig_matrix.update_layout(
-                        xaxis=dict(range=[0.5, 5.5], title="Klasmanagement"),
-                        yaxis=dict(range=[0.5, 5.5], title="Lesaanpak"),
-                        showlegend=False
-                    )
-                    # Kwadranten lijnen
-                    fig_matrix.add_hline(y=3, line_dash="dot", line_color="gray", opacity=0.5)
-                    fig_matrix.add_vline(x=3, line_dash="dot", line_color="gray", opacity=0.5)
-                    
-                    st.plotly_chart(fig_matrix, use_container_width=True)
-                else:
-                    st.caption("Geen lesdata.")
-
-            # ==========================================
+    # ==========================================
             # 4. PDF RAPPORT GENEREREN
             # ==========================================
             st.divider()
             
-            # We gebruiken ReportLab om een nette PDF te maken
-            # Importeer Table en TableStyle hier lokaal of bovenaan
-            from reportlab.platypus import Table, TableStyle
-            from reportlab.lib import colors
-
             if st.button("📄 Download Rapport (PDF)"):
                 report_filename = f"Rapport_{user['email'].split('@')[0]}_{date.today()}.pdf"
                 doc = SimpleDocTemplate(report_filename)
                 styles = getSampleStyleSheet()
                 story = []
 
-                # Titel
                 story.append(Paragraph(f"<b>Leerkrachtenmonitor Rapport</b>", styles["Title"]))
                 story.append(Paragraph(f"Periode: {rapport_periode}", styles["Normal"]))
                 story.append(Spacer(1, 12))
 
-                # Analyse tekst
                 story.append(Paragraph("<b>📊 Analyse & Inzichten</b>", styles["Heading2"]))
-                # De markdown styling (**bold**) weghalen voor PDF of simpele replace doen
+                # Markdown ** verwijderen voor PDF
                 clean_text = analyse_tekst.replace("**", "")
-                # Splitsen op enters en als paragrafen toevoegen
                 for line in clean_text.split("\n"):
                     if line.strip():
                         story.append(Paragraph(line, styles["Normal"]))
@@ -891,7 +711,6 @@ elif user["role"] == "director":
                 
                 story.append(Spacer(1, 12))
 
-                # Cijferoverzicht in Tabel
                 story.append(Paragraph("<b>📈 Cijferoverzicht</b>", styles["Heading2"]))
                 
                 data_table = [
@@ -899,7 +718,7 @@ elif user["role"] == "director":
                     ["Gemiddelde Energie", f"{gem_en:.2f}"],
                     ["Gemiddelde Stress", f"{gem_str:.2f}"],
                     ["Gemiddelde Lesaanpak", f"{gem_les:.2f}"],
-                    ["Aantal lessen geregistreerd", str(aantal_l)]
+                    ["Aantal lessen", str(aantal_l)]
                 ]
 
                 t = Table(data_table, colWidths=[200, 100])
@@ -914,10 +733,8 @@ elif user["role"] == "director":
                 ]))
                 story.append(t)
                 
-                # Build
                 doc.build(story)
                 
-                # Download knop
                 with open(report_filename, "rb") as f:
                     st.download_button(
                         label="📥 Download PDF",
@@ -925,6 +742,12 @@ elif user["role"] == "director":
                         file_name=report_filename,
                         mime="application/pdf"
                     )
+
+# HIER EINDIGT DE TEACHER BLOCK. ZORG DAT DE VOLGENDE ELIF HIER BUITEN VALT (HELEMAAL LINKS)
+elif user["role"] == "director":
+    # ... code van directeur ...
+    pass
+
 # =================================================
 # =============== DIRECTIE VIEW ===================
 # =================================================
