@@ -953,7 +953,6 @@ elif user["role"] == "director":
 
         if not df_w.empty:
             # 1. Zorg dat we met 'Rust' rekenen. 
-            # Als 'Rust' niet bestaat, maar 'Stress' wel -> converteren (6 - Stress)
             if "Rust" not in df_w.columns and "Stress" in df_w.columns:
                 df_w["Rust"] = 6 - pd.to_numeric(df_w["Stress"], errors='coerce')
             
@@ -973,13 +972,13 @@ elif user["role"] == "director":
                 line=dict(color='#2ecc71', width=3), showlegend=False
             ))
             
-            # LIJN 2: Rust (Blauw) - Voorheen Stress (Rood)
+            # LIJN 2: Rust (Blauw)
             fig_trend.add_trace(go.Scatter(
                 x=daily_avg['Datum'], y=daily_avg['Rust'], mode='lines', 
                 line=dict(color='#3498db', width=3), showlegend=False
             ))
             
-            # Annotaties (Labels aan het einde van de lijn)
+            # Annotaties
             last_pt = daily_avg.iloc[-1]
             fig_trend.add_annotation(
                 x=last_pt['Datum'], y=last_pt['Energie'], 
@@ -992,17 +991,24 @@ elif user["role"] == "director":
                 font=dict(color="#3498db", size=14)
             )
 
-            # Layout styling
+            # Layout styling MET Y-as aanpassingen
             fig_trend.update_layout(
                 height=450,
                 xaxis=dict(showgrid=False, showline=False, tickformat="%d %b"),
-                yaxis=dict(showgrid=False, showline=False, showticklabels=False, range=[0.5, 5.5]),
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                yaxis=dict(
+                    showgrid=True,                    # Raster aan
+                    gridcolor='rgba(200,200,200,0.2)', # Heel subtiel transparant grijs
+                    showline=False,                   # Geen harde lijn links
+                    showticklabels=True,              # Wel cijfers tonen
+                    title=None,                       # Geen titel 'Score' o.i.d.
+                    range=[0.5, 5.5]
+                ),
+                paper_bgcolor='rgba(0,0,0,0)', 
+                plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(r=80)
             )
 
             # RODE BAND: Gevarenzone ONDERAAN (0 tot 2.5)
-            # Als energie of rust hierin komt, is het "code rood"
             fig_trend.add_hrect(
                 y0=0, y1=2.5, 
                 fillcolor="#e74c3c", opacity=0.1, line_width=0,
@@ -1012,7 +1018,6 @@ elif user["role"] == "director":
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
             st.info("Geen data beschikbaar voor deze periode.")
-
     # ==========================================
     # TAB 3: SANKEY
     # ==========================================
