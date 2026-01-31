@@ -516,30 +516,7 @@ if user["role"] == "teacher":
                         return None
                 return None
 
-            # ==========================================
-            # 1. WELLBEING TREND (MOBILE OPTIMIZED)
-            # ==========================================
-            st.subheader("🧘 Jouw Welzijnstrend")
             
-            # Data voorbereiden
-            if 'day_df' in globals() or 'day_df' in locals():
-                plot_df = day_df.copy()
-            else:
-                plot_df = pd.DataFrame()
-
-            if not plot_df.empty:
-                plot_df["Datum"] = pd.to_datetime(plot_df["Datum"], errors="coerce")
-                plot_df = plot_df.dropna(subset=["Datum"]).sort_values("Datum")
-                
-                # Bereken Rust
-                if "Rust" not in plot_df.columns and "Stress" in plot_df.columns:
-                    plot_df["Rust"] = 6 - pd.to_numeric(plot_df["Stress"], errors='coerce')
-
-                # Zorg dat alles numeriek is
-                for col in ["Energie", "Rust"]:
-                    if col in plot_df.columns:
-                        plot_df[col] = pd.to_numeric(plot_df[col], errors='coerce')
-
        # ==========================================
             # 1. WELLBEING TREND (MOBILE OPTIMIZED)
             # ==========================================
