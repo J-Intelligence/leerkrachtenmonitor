@@ -1142,6 +1142,48 @@ elif user["role"] == "director":
         with col_content:
             if not df_t1.empty:
                 
+                # ==========================================
+    # TAB 1: HEATMAPS & MIRROR DENSITY
+    # ==========================================
+    with tab_stats:
+        st.subheader("🗓️ Evolutie & Verdeling")
+        
+        col_content, col_filter = st.columns([3, 1])
+
+        # --- FILTERS (RECHTS) ---
+        with col_filter:
+            st.markdown("**📅 Periode**")
+            p_choice = st.radio("Kies:", ["Volledig schooljaar", "Afgelopen maand", "Afgelopen 2 weken"], label_visibility="collapsed", key="t1_per")
+            
+            st.markdown("---")
+            st.markdown("**🏫 Klassen**")
+            with st.container(height=450, border=True):
+                sel_classes_t1 = []
+                if all_classes:
+                    for k in all_classes:
+                        if st.checkbox(f"{k}", value=True, key=f"t1_chk_{k}"):
+                            sel_classes_t1.append(k)
+                else:
+                    st.info("Geen klassen gevonden.")
+
+        # --- LOGICA ---
+        today = pd.Timestamp.today()
+        if p_choice == "Afgelopen maand":
+            start_d = today - pd.Timedelta(days=30)
+        elif p_choice == "Afgelopen 2 weken":
+            start_d = today - pd.Timedelta(days=14)
+        else:
+            start_d = pd.Timestamp(year=today.year if today.month >= 9 else today.year - 1, month=9, day=1)
+
+        df_t1 = df_lessons_raw[
+            (df_lessons_raw["Datum"] >= start_d) & 
+            (df_lessons_raw["Klas"].isin(sel_classes_t1))
+        ].copy()
+
+        # --- VISUALISATIES (LINKS) ---
+        with col_content:
+            if not df_t1.empty:
+                
                 # -----------------------------------------------------
                 # 1. HEATMAPS
                 # -----------------------------------------------------
@@ -1179,10 +1221,14 @@ elif user["role"] == "director":
                     fig_heat.update_layout(
                         height=150 + (len(hm_mgmt)*30),
                         margin=dict(l=0, r=0, t=30, b=0),
-                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                        dragmode=False # Sleepmodus uit
                     )
-                    fig_heat.update_xaxes(showticklabels=False) 
-                    st.plotly_chart(fig_heat, use_container_width=True)
+                    fig_heat.update_xaxes(showticklabels=False, fixedrange=True) 
+                    fig_heat.update_yaxes(fixedrange=True)
+                    
+                    # staticPlot: True zorgt dat de grafiek niet interactief is
+                    st.plotly_chart(fig_heat, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
 
                 # -----------------------------------------------------
                 # 2. MIRROR DENSITY CHART
@@ -1206,7 +1252,7 @@ elif user["role"] == "director":
                     subset = df_t1[df_t1['Klas'] == k]
                     if subset.empty: continue
                     
-                    # Bereken aantal voor de hover
+                    # Bereken aantal voor de hover (ook al is hover uit, goed voor data-integriteit)
                     count_val = len(subset)
 
                     # Deel 1: Aanpak (Positief, Groen)
@@ -1221,8 +1267,7 @@ elif user["role"] == "director":
                         opacity=0.6,
                         meanline_visible=True,
                         points=False,
-                        width=0.75, # Smaller gemaakt voor meer spatie
-                        # HOVER LOGICA: Enkel aantal
+                        width=0.75, 
                         customdata=[count_val] * len(subset),
                         hovertemplate="Aantal registraties: %{customdata}<extra></extra>"
                     ))
@@ -1239,8 +1284,7 @@ elif user["role"] == "director":
                         opacity=0.6,
                         meanline_visible=True,
                         points=False,
-                        width=0.75, # Smaller gemaakt voor meer spatie
-                        # HOVER LOGICA: Enkel aantal
+                        width=0.75,
                         customdata=[count_val] * len(subset),
                         hovertemplate="Aantal registraties: %{customdata}<extra></extra>"
                     ))
@@ -1249,37 +1293,41 @@ elif user["role"] == "director":
                     violinmode='overlay',
                     height=200 + (len(sorted_classes) * 50),
                     showlegend=False,
+                    dragmode=False, # Sleepmodus uit
                     xaxis=dict(
                         range=[0.5, 5.5],
                         tickvals=[1, 2, 3, 4, 5],
                         ticktext=["1 (Laag)", "2", "3", "4", "5 (Hoog)"],
                         showgrid=True,
-                        gridcolor='rgba(200, 200, 200, 0.15)', # Veel transparantere lijnen
+                        gridcolor='rgba(200, 200, 200, 0.15)',
                         title=None,
-                        side='bottom'
+                        side='bottom',
+                        fixedrange=True
                     ),
                     yaxis=dict(
                         showgrid=False,
-                        title=None
+                        title=None,
+                        fixedrange=True
                     ),
                     margin=dict(l=0, r=0, t=10, b=0),
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)'
                 )
                 
-                st.plotly_chart(fig_mirror, use_container_width=True)
+                # Statische plot
+                st.plotly_chart(fig_mirror, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
 
             else:
                 st.info("Geen data gevonden voor deze selectie.")
 
-   # ==========================================
+    # ==========================================
     # TAB 2: WELZIJN (DIRECTIE)
     # ==========================================
     with tab_wellbeing:
         st.subheader("📊 Welzijnstrend Personeel")
         
         # 1. Selectie en Data Filteren
-        w_col1, w_col2 = st.columns([1, 3]) # Iets andere verhouding
+        w_col1, w_col2 = st.columns([1, 3]) 
         with w_col1: 
             w_choice = st.selectbox(
                 "Periode", 
@@ -1294,7 +1342,7 @@ elif user["role"] == "director":
         elif w_choice == "Afgelopen 3 maanden":
             days_back = 90
         else:
-            days_back = 300 # Ongeveer een schooljaar
+            days_back = 300 
 
         start_w = today - pd.Timedelta(days=days_back)
         
@@ -1320,7 +1368,7 @@ elif user["role"] == "director":
             # LIJN 1: Energie
             fig_trend.add_trace(go.Scatter(
                 x=daily_avg['Datum'], y=daily_avg['Energie'], 
-                mode='lines+markers', # Markers toegevoegd voor duidelijkheid
+                mode='lines+markers', 
                 name='Energie',
                 line=dict(color='#2ecc71', width=3),
                 marker=dict(size=6)
@@ -1335,9 +1383,10 @@ elif user["role"] == "director":
                 marker=dict(size=6)
             ))
 
-            # Layout optimalisatie (Zelfde stijl als Leerkracht view)
+            # Layout optimalisatie
             fig_trend.update_layout(
                 height=350,
+                dragmode=False, # Sleepmodus uit
                 margin=dict(l=10, r=10, t=30, b=10),
                 paper_bgcolor='rgba(0,0,0,0)', 
                 plot_bgcolor='rgba(0,0,0,0)',
@@ -1348,8 +1397,9 @@ elif user["role"] == "director":
                 ),
                 xaxis=dict(
                     showgrid=False, 
-                    tickformat="%d %b", # Korte datumnotatie
-                    dtick="D1" if len(daily_avg) < 15 else None
+                    tickformat="%d %b", 
+                    dtick="D1" if len(daily_avg) < 15 else None,
+                    fixedrange=True
                 ),
                 yaxis=dict(
                     showgrid=True, 
@@ -1364,8 +1414,9 @@ elif user["role"] == "director":
                 y0=0, y1=2.5, 
                 fillcolor="#e74c3c", opacity=0.08, line_width=0
             )
-
-            st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False})
+            
+            # Statische plot
+            st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
 
             # --- TREND ANALYSE (METRICS) ---
             st.divider()
@@ -1375,7 +1426,7 @@ elif user["role"] == "director":
             avg_en_cur = df_w["Energie"].mean()
             avg_ru_cur = df_w["Rust"].mean()
 
-            # Vorige periode ophalen (voor de vergelijking)
+            # Vorige periode ophalen
             start_prev = start_w - pd.Timedelta(days=days_back)
             df_prev = df_wellbeing_raw[
                 (df_wellbeing_raw["Datum"] >= start_prev) & 
@@ -1384,7 +1435,6 @@ elif user["role"] == "director":
 
             # Vorige gemiddelden berekenen
             if not df_prev.empty:
-                # Zorg ook hier voor conversie
                 if "Rust" not in df_prev.columns and "Stress" in df_prev.columns:
                     df_prev["Rust"] = 6 - pd.to_numeric(df_prev["Stress"], errors='coerce')
                 
@@ -1397,7 +1447,6 @@ elif user["role"] == "director":
                 delta_en = 0
                 delta_ru = 0
 
-            # Kolommen voor de metrics
             m_col1, m_col2, m_col3 = st.columns(3)
             
             with m_col1:
@@ -1419,11 +1468,12 @@ elif user["role"] == "director":
                     label="Aantal metingen",
                     value=len(df_w),
                     delta=f"{len(df_w) - len(df_prev)}" if not df_prev.empty else None,
-                    delta_color="off" # Grijs, want meer metingen is niet per se 'beter' of 'slechter'
+                    delta_color="off" 
                 )
 
         else:
             st.info("Geen data beschikbaar voor deze periode.")
+            
     # ==========================================
     # TAB 3: SANKEY
     # ==========================================
@@ -1457,8 +1507,13 @@ elif user["role"] == "director":
             if not df_sankey_filtered.empty and len(sel_classes_sankey) > 0:
                 fig_s = draw_sankey_butterfly(df_sankey_filtered)
                 if fig_s:
-                    fig_s.update_layout(height=600, margin=dict(t=20, b=20))
-                    st.plotly_chart(fig_s, use_container_width=True)
+                    fig_s.update_layout(
+                        height=600, 
+                        margin=dict(t=20, b=20),
+                        dragmode=False # Sleepmodus uit
+                    )
+                    # Statische plot voor Sankey
+                    st.plotly_chart(fig_s, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
                 else:
                     st.warning("Te weinig flows.")
             else:
