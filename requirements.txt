@@ -7,3 +7,4 @@ matplotlib
 st-gsheets-connection
 numpy
 seaborn
+kaleido
