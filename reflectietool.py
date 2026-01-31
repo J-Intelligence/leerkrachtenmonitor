@@ -1142,7 +1142,7 @@ elif user["role"] == "director":
         with col_content:
             if not df_t1.empty:
                 
-                # ==========================================
+   # ==========================================
     # TAB 1: HEATMAPS & MIRROR DENSITY
     # ==========================================
     with tab_stats:
@@ -1222,19 +1222,17 @@ elif user["role"] == "director":
                         height=150 + (len(hm_mgmt)*30),
                         margin=dict(l=0, r=0, t=30, b=0),
                         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                        dragmode=False # Sleepmodus uit
+                        dragmode=False  # Sleepmodus uit
                     )
                     fig_heat.update_xaxes(showticklabels=False, fixedrange=True) 
                     fig_heat.update_yaxes(fixedrange=True)
                     
-                    # staticPlot: True zorgt dat de grafiek niet interactief is
                     st.plotly_chart(fig_heat, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
 
                 # -----------------------------------------------------
                 # 2. MIRROR DENSITY CHART
                 # -----------------------------------------------------
                 st.markdown("---")
-                # LEGENDE MET ECHTE KLEUREN (HTML)
                 st.markdown("""
                 <div style="margin-bottom: 10px;">
                     <b>🎻 Score Verdeling:</b> 
@@ -1252,7 +1250,6 @@ elif user["role"] == "director":
                     subset = df_t1[df_t1['Klas'] == k]
                     if subset.empty: continue
                     
-                    # Bereken aantal voor de hover (ook al is hover uit, goed voor data-integriteit)
                     count_val = len(subset)
 
                     # Deel 1: Aanpak (Positief, Groen)
@@ -1314,7 +1311,6 @@ elif user["role"] == "director":
                     plot_bgcolor='rgba(0,0,0,0)'
                 )
                 
-                # Statische plot
                 st.plotly_chart(fig_mirror, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
 
             else:
@@ -1415,7 +1411,6 @@ elif user["role"] == "director":
                 fillcolor="#e74c3c", opacity=0.08, line_width=0
             )
             
-            # Statische plot
             st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
 
             # --- TREND ANALYSE (METRICS) ---
@@ -1473,7 +1468,7 @@ elif user["role"] == "director":
 
         else:
             st.info("Geen data beschikbaar voor deze periode.")
-            
+
     # ==========================================
     # TAB 3: SANKEY
     # ==========================================
@@ -1512,7 +1507,6 @@ elif user["role"] == "director":
                         margin=dict(t=20, b=20),
                         dragmode=False # Sleepmodus uit
                     )
-                    # Statische plot voor Sankey
                     st.plotly_chart(fig_s, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
                 else:
                     st.warning("Te weinig flows.")
