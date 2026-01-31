@@ -19,6 +19,15 @@ if 'user' in locals() or 'user' in globals():
     st.write(f"Huidige rol: {user.get('role', 'Geen rol gevonden')}")
 else:
     st.error("De variabele 'user' bestaat niet!")
+
+# -----------------------------------------------------------
+# TIJDELIJKE 'LOGIN' SIMULATIE
+# Zorgt dat de variabele 'user' bestaat zodat de rest werkt
+# -----------------------------------------------------------
+if 'user' not in st.session_state:
+    # We maken handmatig een user aan in het geheugen
+    st.session_state['user'] = {"role": "director", "name": "Test Directeur"}
+    
 # --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
 def load_all_school_data():
     """Laadt alle CSV's uit de map, voegt ze samen en verwijdert namen."""
@@ -982,7 +991,7 @@ if user["role"] == "teacher":
                 st.warning("Er is geen data beschikbaar in de gekozen periode om een rapport van te maken.")
                         
 # <--- BELANGRIJK: DEZE ELIF MOET HELEMAAL TERUG NAAR LINKS (OF HETZELFDE NIVEAU ALS IF TEACHER)
-elif user["role"] == "director":
+if user["role"] == "director":
     # (Hier komt jouw bestaande code voor de directeur)
     pass
 # =================================================
