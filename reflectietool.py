@@ -230,7 +230,13 @@ if "user" in params and "user" not in st.session_state:
 # -------------------------------------------------
 # AUTH
 # -------------------------------------------------
-st.title("❤️ Leerkrachtenmonitor")
+# NIEUWE REGEL (VOOR MOBIEL):
+st.markdown("""
+    <h1 style='text-align: center; font-size: 28px; margin-bottom: 20px;'>
+        ❤️ Leerkrachtenmonitor
+    </h1>
+    """, unsafe_allow_html=True)
+
 users = load_users()
 
 if "user" not in st.session_state:
