@@ -540,14 +540,37 @@ if user["role"] == "teacher":
                     if col in plot_df.columns:
                         plot_df[col] = pd.to_numeric(plot_df[col], errors='coerce')
 
-                # --- VERBETERING 1: INTERACTIEVE RANGE ---
-                # Op mobiel is 'alles' zien te druk. We voegen een simpele filter toe.
-                # Dit geeft de gebruiker controle zonder het scherm te overladen.
+       # ==========================================
+            # 1. WELLBEING TREND (MOBILE OPTIMIZED)
+            # ==========================================
+            st.subheader("🧘 Jouw Welzijnstrend")
+            
+            # Data voorbereiden
+            if 'day_df' in globals() or 'day_df' in locals():
+                plot_df = day_df.copy()
+            else:
+                plot_df = pd.DataFrame()
+
+            # CONTROLE: IS ER DATA?
+            if not plot_df.empty:
+                plot_df["Datum"] = pd.to_datetime(plot_df["Datum"], errors="coerce")
+                plot_df = plot_df.dropna(subset=["Datum"]).sort_values("Datum")
+                
+                # Bereken Rust
+                if "Rust" not in plot_df.columns and "Stress" in plot_df.columns:
+                    plot_df["Rust"] = 6 - pd.to_numeric(plot_df["Stress"], errors='coerce')
+
+                # Zorg dat alles numeriek is
+                for col in ["Energie", "Rust"]:
+                    if col in plot_df.columns:
+                        plot_df[col] = pd.to_numeric(plot_df[col], errors='coerce')
+
+                # --- STAP 1: FILTER OPTIES ---
                 view_option = st.radio(
                     "Toon periode:", 
                     ["Laatste 14 dagen", "Deze maand", "Alles"], 
                     horizontal=True,
-                    label_visibility="collapsed" # Verberg het label voor strakker design
+                    label_visibility="collapsed"
                 )
 
                 filtered_df = plot_df.copy()
@@ -557,86 +580,49 @@ if user["role"] == "teacher":
                     now = pd.Timestamp.now()
                     filtered_df = plot_df[plot_df["Datum"].dt.month == now.month]
 
-                # Plotly Lijn Grafiek
+                # --- STAP 2: GRAFIEK TEKENEN ---
                 fig = px.line(
                     filtered_df,
                     x="Datum",
                     y=["Energie", "Rust"], 
                     markers=True,
                     color_discrete_map={"Energie": "#2ecc71", "Rust": "#3498db"},
-                    title=None # Titel hebben we al in subheader, scheelt ruimte
+                    title=None
                 )
                 
-                # --- VERBETERING 2 & 3: LAYOUT VOOR MOBIEL ---
                 fig.update_layout(
                     yaxis_range=[0.5, 5.5],
-                    height=300, # Iets compacter
-                    margin=dict(l=10, r=10, t=30, b=10), # Marges minimaliseren = grafiek breder
+                    height=300,
+                    margin=dict(l=10, r=10, t=30, b=10),
                     plot_bgcolor="rgba(0,0,0,0)",
                     paper_bgcolor="rgba(0,0,0,0)",
-                    
-                    # Legenda BOVENAAN zetten (horizontaal)
-                    # Dit voorkomt dat de grafiek smaller wordt geduwd
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1,
-                        title=None
-                    )
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=None)
                 )
 
-                # Assen opmaken
-                fig.update_yaxes(
-                    showgrid=True, 
-                    gridcolor='lightgray', 
-                    fixedrange=True # Voorkomt per ongeluk zoomen op mobiel (frustrerend)
-                )
-                
-                fig.update_xaxes(
-                    showgrid=False,
-                    # Korte datum notatie (bijv: "31 jan") scheelt ruimte
-                    tickformat="%d %b", 
-                    dtick="D1" if len(filtered_df) < 15 else None # Elke dag tonen bij korte periode
-                )
-
-                # De waarschuwingszone (subtieler)
-                fig.add_hrect(
-                    y0=0, y1=2.5, 
-                    fillcolor="#e74c3c", opacity=0.08, line_width=0
-                )
+                fig.update_yaxes(showgrid=True, gridcolor='lightgray', fixedrange=True)
+                fig.update_xaxes(showgrid=False, tickformat="%d %b", dtick="D1" if len(filtered_df) < 15 else None)
+                fig.add_hrect(y0=0, y1=2.5, fillcolor="#e74c3c", opacity=0.08, line_width=0)
                 
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
             
-            else:
-                st.info("Nog geen data beschikbaar om te plotten.")
-                # ==========================================
-                # NIEUW: 2-WEKELIJKSE TREND ANALYSE
-                # ==========================================
+                # --- STAP 3: TREND ANALYSE (Staat nu OOK binnen de 'if') ---
                 st.markdown("##### 📉 Trend Analyse (Laatste 2 weken vs. 2 weken ervoor)")
                 
                 now = pd.Timestamp.now()
-                # Periode 1: Huidige 2 weken (0-14 dagen geleden)
                 date_start_cur = now - pd.Timedelta(days=14)
-                # Periode 2: Vorige 2 weken (14-28 dagen geleden)
                 date_start_prev = now - pd.Timedelta(days=28)
 
-                # Data filteren
+                # We gebruiken hier 'plot_df' (de volledige data) en niet 'filtered_df'
                 df_cur = plot_df[plot_df["Datum"] >= date_start_cur]
                 df_prev = plot_df[(plot_df["Datum"] >= date_start_prev) & (plot_df["Datum"] < date_start_cur)]
 
                 if not df_cur.empty:
-                    # Gemiddelden berekenen
                     avg_en_cur = df_cur["Energie"].mean()
                     avg_ru_cur = df_cur["Rust"].mean()
                     
-                    # Vorige gemiddelden (0 als er geen data is)
                     avg_en_prev = df_prev["Energie"].mean() if not df_prev.empty else 0
                     avg_ru_prev = df_prev["Rust"].mean() if not df_prev.empty else 0
 
-                    # Verschil berekenen (delta toont automatisch rood/groen)
-                    # Let op: als prev 0 is, is de delta gewoon de huidige score (of je kan delta uitzetten)
                     delta_en = avg_en_cur - avg_en_prev if not df_prev.empty else 0
                     delta_ru = avg_ru_cur - avg_ru_prev if not df_prev.empty else 0
 
@@ -644,20 +630,21 @@ if user["role"] == "teacher":
                     
                     with c_trend1:
                         st.metric(
-                            label="Gem. Energie (laatste 14d)", 
+                            label="Gem. Energie (14d)", 
                             value=f"{avg_en_cur:.1f}", 
                             delta=f"{delta_en:+.1f}" if delta_en != 0 else None
                         )
                     
                     with c_trend2:
                         st.metric(
-                            label="Gem. Rust (laatste 14d)", 
+                            label="Gem. Rust (14d)", 
                             value=f"{avg_ru_cur:.1f}", 
                             delta=f"{delta_ru:+.1f}" if delta_ru != 0 else None
                         )
                 else:
-                    st.info("Nog onvoldoende recente data voor een trendanalyse van de laatste 2 weken.")
+                    st.info("Nog onvoldoende recente data voor trendanalyse.")
 
+            # --- STAP 4: DE ELSE (Als er GEEN data is) ---
             else:
                 st.info("Nog geen daggevoel geregistreerd.")
 
