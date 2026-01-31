@@ -523,7 +523,7 @@ if user["role"] == "teacher":
                 return None
 
             
-       # ==========================================
+            # ==========================================
             # 1. WELLBEING TREND (MOBILE OPTIMIZED)
             # ==========================================
             st.subheader("🧘 Jouw Welzijnstrend")
@@ -579,16 +579,18 @@ if user["role"] == "teacher":
                     margin=dict(l=10, r=10, t=30, b=10),
                     plot_bgcolor="rgba(0,0,0,0)",
                     paper_bgcolor="rgba(0,0,0,0)",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=None)
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=None),
+                    dragmode=False # Sleepmodus uit
                 )
 
                 fig.update_yaxes(showgrid=True, gridcolor='lightgray', fixedrange=True)
-                fig.update_xaxes(showgrid=False, tickformat="%d %b", dtick="D1" if len(filtered_df) < 15 else None)
+                fig.update_xaxes(showgrid=False, tickformat="%d %b", dtick="D1" if len(filtered_df) < 15 else None, fixedrange=True)
                 fig.add_hrect(y0=0, y1=2.5, fillcolor="#e74c3c", opacity=0.08, line_width=0)
                 
-                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                # 'staticPlot': True zorgt dat de grafiek volledig "bevroren" is (geen interactie)
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
             
-                # --- STAP 3: TREND ANALYSE (Staat nu OOK binnen de 'if') ---
+                # --- STAP 3: TREND ANALYSE ---
                 st.markdown("##### 📉 Trend Analyse (Laatste 2 weken vs. 2 weken ervoor)")
                 
                 now = pd.Timestamp.now()
@@ -676,7 +678,7 @@ if user["role"] == "teacher":
                     st.write("###### ☁️ Trefwoordenwolk (Alle klassen in selectie)")
                     wc_fig = generate_wordcloud_plot(df_filtered)
                     if wc_fig:
-                        st.pyplot(wc_fig)
+                        st.pyplot(wc_fig) # Pyplot is standaard al statisch in Streamlit
                         plt.close(wc_fig) # Geheugen vrijmaken
                     else:
                         st.caption("Nog niet genoeg tags voor een wordcloud.")
@@ -752,10 +754,13 @@ if user["role"] == "teacher":
                                         showlegend=True, 
                                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                                         margin=dict(l=0, r=0, t=30, b=10),
-                                        xaxis=dict(range=[0.5, 5.5], showgrid=True, tickvals=[1,3,5]),
-                                        yaxis=dict(showticklabels=False)
+                                        xaxis=dict(range=[0.5, 5.5], showgrid=True, tickvals=[1,3,5], fixedrange=True),
+                                        yaxis=dict(showticklabels=False, fixedrange=True),
+                                        dragmode=False # Sleepmodus uit
                                     )
-                                    st.plotly_chart(fig_mirror, use_container_width=True)
+                                    
+                                    # 'staticPlot': True maakt de grafiek niet-interactief
+                                    st.plotly_chart(fig_mirror, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
                                     
                                     # --- WORDCLOUD PER KLAS ---
                                     st.markdown(f"**Tags voor {k_name}:**")
