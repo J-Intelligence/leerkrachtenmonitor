@@ -20,18 +20,16 @@ if 'user' in locals() or 'user' in globals():
 else:
     st.error("De variabele 'user' bestaat niet!")
 
-# -----------------------------------------------------------
-# TIJDELIJKE 'LOGIN' SIMULATIE
-# -----------------------------------------------------------
-if 'user' not in st.session_state:
-    st.session_state['user'] = {
-        "role": "director", 
-        "email": "directie@school.be",  # <--- DEZE REGEL ONTBRAK
-        "name": "Test Directeur"        # Voor de zekerheid ook deze toevoegen
-    }
-
-user = st.session_state['user']
-# -----------------------------------------------------------
+# ========================================================
+# HARDE FIX: Forceer de gebruiker
+# ========================================================
+# Dit maakt de variabele 'user' aan voordat eender wat anders gebeurt.
+user = {
+    "role": "director",
+    "email": "directie@school.be",
+    "name": "Test Directeur"
+}
+# ========================================================
     
 # --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
 def load_all_school_data():
