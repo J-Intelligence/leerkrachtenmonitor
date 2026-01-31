@@ -763,6 +763,9 @@ if user["role"] == "teacher":
 # -------------------------------------------------
 # TAB 4 – RAPPORT GENERATOR (MET SANKEY)
 # -------------------------------------------------
+    # -------------------------------------------------
+    # TAB 4 – RAPPORT GENERATOR (VOLLEDIG GECORRIGEERD)
+    # -------------------------------------------------
     with tab4:
         st.header("📑 Rapport Generator")
         st.write("Genereer een uitgebreid PDF-rapport met al je statistieken, vergelijkingen, correlaties én de oorzaak-gevolg analyse.")
@@ -777,36 +780,103 @@ if user["role"] == "teacher":
                 key="rep_periode_select"
             )
 
-        # -------------------------------------------------------
-        # C. METRICS BEREKENEN (HERSTELDE CODE)
-        # Zonder dit blok weet Python niet wat 'aantal_l' of 'gem_en' is.
-        # -------------------------------------------------------
+        # =======================================================
+        # STAP 2: DATA VOORBEREIDEN & METRICS BEREKENEN
+        # (Dit MOET hier staan, voordat we de PDF maken of de knop tonen)
+        # =======================================================
+        
+        # A. Startdatum bepalen
+        now = pd.Timestamp.now()
+        start_date = now 
+        
+        if rapport_periode == "Laatste 2 weken":
+            start_date = now - pd.Timedelta(days=14)
+        elif rapport_periode == "Laatste 30 dagen":
+            start_date = now - pd.Timedelta(days=30)
+        elif rapport_periode == "Huidig Schooljaar":
+            start_date = pd.Timestamp(year=now.year - 1 if now.month < 9 else now.year, month=9, day=1)
+
+        # B. Data kopiëren uit de variabelen van Tab 1 & 2
+        # We controleren veiligheidshalve of day_df en les_df bestaan
+        if 'day_df' in locals() or 'day_df' in globals():
+            r_day_df = day_df.copy()
+        else:
+            r_day_df = pd.DataFrame(columns=["Datum", "Energie", "Stress"])
+
+        if 'les_df' in locals() or 'les_df' in globals():
+            r_les_df = les_df.copy()
+        else:
+            r_les_df = pd.DataFrame(columns=["Datum", "Klas", "Lesaanpak", "Klasmanagement"])
+
+        # C. Filteren op datum
+        if not r_day_df.empty: 
+            r_day_df["Datum"] = pd.to_datetime(r_day_df["Datum"])
+            r_day_df = r_day_df[r_day_df["Datum"] >= start_date]
+
+        if not r_les_df.empty:
+            r_les_df["Datum"] = pd.to_datetime(r_les_df["Datum"])
+            r_les_df = r_les_df[r_les_df["Datum"] >= start_date]
+
+        # D. Metrics en Aantallen berekenen (CRUCIAAL VOOR DE ERROR)
         gem_en = r_day_df["Energie"].mean() if not r_day_df.empty else 0
         gem_str = r_day_df["Stress"].mean() if not r_day_df.empty else 0
         gem_les = r_les_df["Lesaanpak"].mean() if not r_les_df.empty else 0
         gem_mng = r_les_df["Klasmanagement"].mean() if not r_les_df.empty else 0
         
-        # HIER wordt de variabele aangemaakt waar de foutmelding over gaat:
-        aantal_l = len(r_les_df) 
+        # Deze variabele zorgde voor de NameError, nu staat hij op tijd:
+        aantal_l = len(r_les_df)
 
-        # Helper voor tekst (Delta) vs Benchmark
+        # Helper functie voor tekst
         def get_delta_text(current, benchmark, reverse=False):
             if benchmark == 0: return "-"
             diff = current - benchmark
             return f"{diff:+.1f} vs alle leerkrachten"
 
-        # -------------------------------------------------------
-        # PDF RAPPORT GENEREREN
-        # -------------------------------------------------------
-        st.divider()
+        # E. Benchmark data laden (voor de vergelijkingstabel)
+        try:
+            benchmark_day_df = pd.read_csv("dag_check_db.csv") 
+            benchmark_les_df = pd.read_csv("les_db.csv")
             
+            # Zeker zijn dat het numeriek is
+            for col in ["Energie", "Stress"]:
+                if col in benchmark_day_df.columns:
+                    benchmark_day_df[col] = pd.to_numeric(benchmark_day_df[col], errors='coerce')
+            
+            for col in ["Lesaanpak", "Klasmanagement"]:
+                if col in benchmark_les_df.columns:
+                    benchmark_les_df[col] = pd.to_numeric(benchmark_les_df[col], errors='coerce')     
+        except FileNotFoundError:
+            benchmark_day_df = pd.DataFrame()
+            benchmark_les_df = pd.DataFrame()
+
+        # Globale gemiddelden
+        glob_avg_en = benchmark_day_df["Energie"].mean() if not benchmark_day_df.empty else 0
+        glob_avg_str = benchmark_day_df["Stress"].mean() if not benchmark_day_df.empty else 0
+        glob_avg_les = benchmark_les_df["Lesaanpak"].mean() if not benchmark_les_df.empty else 0
+        glob_avg_mng = benchmark_les_df["Klasmanagement"].mean() if not benchmark_les_df.empty else 0
+
+        # F. Data Mergen voor correlaties
+        merged_df = pd.DataFrame()
+        has_correlation_data = False
+        
+        if not r_les_df.empty and not r_day_df.empty:
+            merged_df = pd.merge(r_les_df, r_day_df, on="Datum", how="inner")
+            if len(merged_df) > 2: 
+                merged_df["Rust"] = 6 - merged_df["Stress"]
+                has_correlation_data = True
+
+        # =======================================================
+        # STAP 3: PDF FUNCTIE DEFINIËREN
+        # =======================================================
+        st.divider()
+        
         try:
             import io
             from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
             from reportlab.lib.styles import getSampleStyleSheet
             from reportlab.lib import colors
             import seaborn as sns 
-            import matplotlib.pyplot as plt # Zorg dat deze ook geïmporteerd is
+            import matplotlib.pyplot as plt
             pdf_available = True
         except ImportError:
             pdf_available = False
@@ -817,21 +887,19 @@ if user["role"] == "teacher":
             def generate_pdf():
                 buffer = io.BytesIO()
                 
-                # 1. Helper voor Matplotlib (Bestaand)
+                # Helper: Matplotlib naar Afbeelding
                 def plot_to_img(fig):
                     img_buf = io.BytesIO()
                     fig.savefig(img_buf, format='png', dpi=120, bbox_inches='tight')
                     img_buf.seek(0)
                     return ReportLabImage(img_buf, width=400, height=220)
 
-                # 2. NIEUWE Helper voor Plotly (Sankey)
+                # Helper: Plotly naar Afbeelding (Voor Sankey)
                 def plotly_to_pdf_img(fig):
-                    # We gebruiken to_image om bytes te krijgen. 
-                    # Kaleido package is hier vaak voor nodig.
                     try:
+                        # Vereist 'kaleido' package
                         img_bytes = fig.to_image(format="png", width=1000, height=600, scale=2)
                         img_buf = io.BytesIO(img_bytes)
-                        # We schalen het plaatje in de PDF (behoud aspect ratio, pas breedte aan)
                         return ReportLabImage(img_buf, width=460, height=276)
                     except Exception as e:
                         return None
@@ -854,12 +922,11 @@ if user["role"] == "teacher":
                 story.append(Paragraph(f"<b>Leerkracht:</b> {clean_name}<br/><b>Periode:</b> {rapport_periode}", styles["Normal"]))
                 story.append(Spacer(1, 20))
 
-                # SECTIE 1: Kerncijfers (Bestaand)
+                # SECTIE 1: Kerncijfers
                 story.append(Paragraph("1. Jouw Score vs. Gemiddelde Leerkracht", h2_style))
                 story.append(Paragraph("Jouw gemiddelden vergeleken met de benchmark.", styles["Normal"]))
                 story.append(Spacer(1, 10))
                 
-                # ... (Jouw tabel logica hier behouden) ...
                 tbl_data = [
                     ["Indicator", "Jouw Score", "Gem. Alle Leerkrachten", "Verschil"],
                     ["Energie", f"{gem_en:.1f}", f"{glob_avg_en:.1f}", get_delta_text(gem_en, glob_avg_en)],
@@ -880,7 +947,7 @@ if user["role"] == "teacher":
                 story.append(t)
                 story.append(Spacer(1, 20))
 
-                # SECTIE 2: Correlaties (Bestaand)
+                # SECTIE 2: Correlaties
                 story.append(Paragraph("2. Samenhang & Patronen", h2_style))
                 if has_correlation_data:
                     fig_pdf_corr, ax_pdf_corr = plt.subplots(figsize=(6, 4))
@@ -892,7 +959,7 @@ if user["role"] == "teacher":
                 else:
                     story.append(Paragraph("Onvoldoende data voor correlaties.", styles["Italic"]))
 
-                # SECTIE 3: Weekpatroon (Bestaand)
+                # SECTIE 3: Weekpatroon
                 story.append(Paragraph("3. Weekpatroon (Lesaanpak)", h2_style))
                 if not r_les_df.empty:
                     r_les_df["Weekdag"] = r_les_df["Datum"].dt.day_name()
@@ -908,39 +975,37 @@ if user["role"] == "teacher":
                     else:
                         story.append(Paragraph("Geen weekpatroon data.", styles["Italic"]))
                 
-                # =========================================================
-                # SECTIE 4: NIEUWE SANKEY INTEGRATIE
-                # =========================================================
+                # SECTIE 4: SANKEY INTEGRATIE
                 story.append(Paragraph("4. Oorzaak & Gevolg (Flow)", h2_style))
                 story.append(Paragraph("Hoe jouw klasmanagement doorvloeit naar je lesaanpak (en andersom).", styles["Normal"]))
                 story.append(Spacer(1, 10))
 
-                # We gebruiken hier 'r_les_df' die al gefilterd is op de leerkracht én de juiste periode
+                # We controleren of de draw_sankey_butterfly functie bestaat en of er data is
                 if not r_les_df.empty and 'draw_sankey_butterfly' in globals():
-                    # We roepen de functie aan die je al hebt (die ook door directie gebruikt wordt)
-                    # Omdat r_les_df al gefilterd is, toont dit automatisch alleen data van deze leerkracht
+                    # r_les_df is al gefilterd voor deze leraar
                     fig_sankey = draw_sankey_butterfly(r_les_df)
                     
                     if fig_sankey:
-                        # Achtergrond transparant of wit maken voor de PDF
                         fig_sankey.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                        
-                        # Omzetten naar PDF afbeelding
                         sankey_img = plotly_to_pdf_img(fig_sankey)
                         
                         if sankey_img:
                             story.append(sankey_img)
                         else:
-                            story.append(Paragraph("<i>Kon de Sankey niet genereren (kaleido ontbreekt mogelijk).</i>", styles["Normal"]))
+                            story.append(Paragraph("<i>Kon de Sankey niet genereren (kaleido module ontbreekt mogelijk).</i>", styles["Normal"]))
                     else:
-                        story.append(Paragraph("Te weinig unieke flows om te visualiseren.", styles["Italic"]))
+                        story.append(Paragraph("Te weinig flows om te visualiseren.", styles["Italic"]))
                 else:
-                    story.append(Paragraph("Geen data beschikbaar voor flow analyse.", styles["Italic"]))
+                    story.append(Paragraph("Geen data beschikbaar.", styles["Italic"]))
 
                 doc.build(story)
                 buffer.seek(0)
                 return buffer
 
+            # =======================================================
+            # STAP 4: DOWNLOAD KNOP TONEN
+            # =======================================================
+            # Nu bestaat 'aantal_l' zeker weten, want Stap 2 is uitgevoerd.
             if aantal_l > 0 or not r_day_df.empty:
                 pdf_data = generate_pdf()
                 clean_filename = f"Rapport_{user['email'].split('@')[0].replace('.', '_')}.pdf"
