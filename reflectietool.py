@@ -517,21 +517,21 @@ if user["role"] == "teacher":
                 return None
 
             # ==========================================
-            # 1. WELLBEING TREND (LIJNGRAFIEK)
+            # 1. WELLBEING TREND (MOBILE OPTIMIZED)
             # ==========================================
             st.subheader("🧘 Jouw Welzijnstrend")
             
-            # We gebruiken day_df direct (deze is globaal beschikbaar)
+            # Data voorbereiden
             if 'day_df' in globals() or 'day_df' in locals():
                 plot_df = day_df.copy()
             else:
-                plot_df = pd.DataFrame() # Fallback
+                plot_df = pd.DataFrame()
 
             if not plot_df.empty:
                 plot_df["Datum"] = pd.to_datetime(plot_df["Datum"], errors="coerce")
                 plot_df = plot_df.dropna(subset=["Datum"]).sort_values("Datum")
                 
-                # Bereken Rust (inverse van Stress) als die niet bestaat
+                # Bereken Rust
                 if "Rust" not in plot_df.columns and "Stress" in plot_df.columns:
                     plot_df["Rust"] = 6 - pd.to_numeric(plot_df["Stress"], errors='coerce')
 
@@ -540,31 +540,77 @@ if user["role"] == "teacher":
                     if col in plot_df.columns:
                         plot_df[col] = pd.to_numeric(plot_df[col], errors='coerce')
 
+                # --- VERBETERING 1: INTERACTIEVE RANGE ---
+                # Op mobiel is 'alles' zien te druk. We voegen een simpele filter toe.
+                # Dit geeft de gebruiker controle zonder het scherm te overladen.
+                view_option = st.radio(
+                    "Toon periode:", 
+                    ["Laatste 14 dagen", "Deze maand", "Alles"], 
+                    horizontal=True,
+                    label_visibility="collapsed" # Verberg het label voor strakker design
+                )
+
+                filtered_df = plot_df.copy()
+                if view_option == "Laatste 14 dagen":
+                    filtered_df = plot_df.tail(14)
+                elif view_option == "Deze maand":
+                    now = pd.Timestamp.now()
+                    filtered_df = plot_df[plot_df["Datum"].dt.month == now.month]
+
                 # Plotly Lijn Grafiek
                 fig = px.line(
-                    plot_df,
+                    filtered_df,
                     x="Datum",
                     y=["Energie", "Rust"], 
                     markers=True,
                     color_discrete_map={"Energie": "#2ecc71", "Rust": "#3498db"},
-                    title="Energie & Rust Balans"
+                    title=None # Titel hebben we al in subheader, scheelt ruimte
                 )
                 
+                # --- VERBETERING 2 & 3: LAYOUT VOOR MOBIEL ---
                 fig.update_layout(
                     yaxis_range=[0.5, 5.5],
-                    xaxis_title=None,
-                    legend_title=None,
-                    height=350,
-                    margin=dict(l=20, r=20, t=40, b=20),
+                    height=300, # Iets compacter
+                    margin=dict(l=10, r=10, t=30, b=10), # Marges minimaliseren = grafiek breder
                     plot_bgcolor="rgba(0,0,0,0)",
-                    paper_bgcolor="rgba(0,0,0,0)"
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    
+                    # Legenda BOVENAAN zetten (horizontaal)
+                    # Dit voorkomt dat de grafiek smaller wordt geduwd
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1,
+                        title=None
+                    )
                 )
-                fig.update_yaxes(showgrid=True, gridcolor='lightgray')
-                fig.update_xaxes(showgrid=False)
-                fig.add_hrect(y0=0, y1=2.5, fillcolor="#e74c3c", opacity=0.1, line_width=0, annotation_text="⚠️ Let op", annotation_position="bottom right")
-                
-                st.plotly_chart(fig, use_container_width=True)
 
+                # Assen opmaken
+                fig.update_yaxes(
+                    showgrid=True, 
+                    gridcolor='lightgray', 
+                    fixedrange=True # Voorkomt per ongeluk zoomen op mobiel (frustrerend)
+                )
+                
+                fig.update_xaxes(
+                    showgrid=False,
+                    # Korte datum notatie (bijv: "31 jan") scheelt ruimte
+                    tickformat="%d %b", 
+                    dtick="D1" if len(filtered_df) < 15 else None # Elke dag tonen bij korte periode
+                )
+
+                # De waarschuwingszone (subtieler)
+                fig.add_hrect(
+                    y0=0, y1=2.5, 
+                    fillcolor="#e74c3c", opacity=0.08, line_width=0
+                )
+                
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            
+            else:
+                st.info("Nog geen data beschikbaar om te plotten.")
                 # ==========================================
                 # NIEUW: 2-WEKELIJKSE TREND ANALYSE
                 # ==========================================
