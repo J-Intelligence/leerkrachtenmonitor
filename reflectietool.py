@@ -22,11 +22,16 @@ else:
 
 # -----------------------------------------------------------
 # TIJDELIJKE 'LOGIN' SIMULATIE
-# Zorgt dat de variabele 'user' bestaat zodat de rest werkt
 # -----------------------------------------------------------
 if 'user' not in st.session_state:
-    # We maken handmatig een user aan in het geheugen
-    st.session_state['user'] = {"role": "director", "name": "Test Directeur"}
+    st.session_state['user'] = {
+        "role": "director", 
+        "email": "directie@school.be",  # <--- DEZE REGEL ONTBRAK
+        "name": "Test Directeur"        # Voor de zekerheid ook deze toevoegen
+    }
+
+user = st.session_state['user']
+# -----------------------------------------------------------
     
 # --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
 def load_all_school_data():
