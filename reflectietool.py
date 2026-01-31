@@ -1142,48 +1142,6 @@ elif user["role"] == "director":
         with col_content:
             if not df_t1.empty:
                 
-# ==========================================
-    # TAB 1: HEATMAPS & MIRROR DENSITY
-    # ==========================================
-    with tab_stats:
-        st.subheader("🗓️ Evolutie & Verdeling")
-        
-        col_content, col_filter = st.columns([3, 1])
-
-        # --- FILTERS (RECHTS) ---
-        with col_filter:
-            st.markdown("**📅 Periode**")
-            p_choice = st.radio("Kies:", ["Volledig schooljaar", "Afgelopen maand", "Afgelopen 2 weken"], label_visibility="collapsed", key="t1_per")
-            
-            st.markdown("---")
-            st.markdown("**🏫 Klassen**")
-            with st.container(height=450, border=True):
-                sel_classes_t1 = []
-                if all_classes:
-                    for k in all_classes:
-                        if st.checkbox(f"{k}", value=True, key=f"t1_chk_{k}"):
-                            sel_classes_t1.append(k)
-                else:
-                    st.info("Geen klassen gevonden.")
-
-        # --- LOGICA ---
-        today = pd.Timestamp.today()
-        if p_choice == "Afgelopen maand":
-            start_d = today - pd.Timedelta(days=30)
-        elif p_choice == "Afgelopen 2 weken":
-            start_d = today - pd.Timedelta(days=14)
-        else:
-            start_d = pd.Timestamp(year=today.year if today.month >= 9 else today.year - 1, month=9, day=1)
-
-        df_t1 = df_lessons_raw[
-            (df_lessons_raw["Datum"] >= start_d) & 
-            (df_lessons_raw["Klas"].isin(sel_classes_t1))
-        ].copy()
-
-        # --- VISUALISATIES (LINKS) ---
-        with col_content:
-            if not df_t1.empty:
-                
                 # -----------------------------------------------------
                 # 1. HEATMAPS
                 # -----------------------------------------------------
