@@ -14,6 +14,11 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
+st.write("Debug info:")
+if 'user' in locals() or 'user' in globals():
+    st.write(f"Huidige rol: {user.get('role', 'Geen rol gevonden')}")
+else:
+    st.error("De variabele 'user' bestaat niet!")
 # --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
 def load_all_school_data():
     """Laadt alle CSV's uit de map, voegt ze samen en verwijdert namen."""
