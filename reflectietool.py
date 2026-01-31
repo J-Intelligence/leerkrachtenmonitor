@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -778,18 +777,29 @@ if user["role"] == "teacher":
                 key="rep_periode_select"
             )
 
-        # 2. DATA VOORBEREIDING
-        # ... (De code om data te laden en benchmark te berekenen blijft identiek aan jouw origineel) ...
-        # ... [Hier jouw originele code voor laden en filteren laten staan] ...
+        # -------------------------------------------------------
+        # C. METRICS BEREKENEN (HERSTELDE CODE)
+        # Zonder dit blok weet Python niet wat 'aantal_l' of 'gem_en' is.
+        # -------------------------------------------------------
+        gem_en = r_day_df["Energie"].mean() if not r_day_df.empty else 0
+        gem_str = r_day_df["Stress"].mean() if not r_day_df.empty else 0
+        gem_les = r_les_df["Lesaanpak"].mean() if not r_les_df.empty else 0
+        gem_mng = r_les_df["Klasmanagement"].mean() if not r_les_df.empty else 0
         
-        # Korte herhaling van de variabelen die we nodig hebben (zodat de code hieronder werkt):
-        # We gaan ervan uit dat r_day_df en r_les_df hier correct gevuld zijn door jouw bestaande code.
+        # HIER wordt de variabele aangemaakt waar de foutmelding over gaat:
+        aantal_l = len(r_les_df) 
+
+        # Helper voor tekst (Delta) vs Benchmark
+        def get_delta_text(current, benchmark, reverse=False):
+            if benchmark == 0: return "-"
+            diff = current - benchmark
+            return f"{diff:+.1f} vs alle leerkrachten"
 
         # -------------------------------------------------------
         # PDF RAPPORT GENEREREN
         # -------------------------------------------------------
         st.divider()
-        
+            
         try:
             import io
             from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
