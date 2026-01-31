@@ -1142,7 +1142,7 @@ elif user["role"] == "director":
         with col_content:
             if not df_t1.empty:
                 
-   # ==========================================
+# ==========================================
     # TAB 1: HEATMAPS & MIRROR DENSITY
     # ==========================================
     with tab_stats:
@@ -1222,7 +1222,7 @@ elif user["role"] == "director":
                         height=150 + (len(hm_mgmt)*30),
                         margin=dict(l=0, r=0, t=30, b=0),
                         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                        dragmode=False  # Sleepmodus uit
+                        dragmode=False
                     )
                     fig_heat.update_xaxes(showticklabels=False, fixedrange=True) 
                     fig_heat.update_yaxes(fixedrange=True)
@@ -1290,7 +1290,7 @@ elif user["role"] == "director":
                     violinmode='overlay',
                     height=200 + (len(sorted_classes) * 50),
                     showlegend=False,
-                    dragmode=False, # Sleepmodus uit
+                    dragmode=False,
                     xaxis=dict(
                         range=[0.5, 5.5],
                         tickvals=[1, 2, 3, 4, 5],
@@ -1382,7 +1382,7 @@ elif user["role"] == "director":
             # Layout optimalisatie
             fig_trend.update_layout(
                 height=350,
-                dragmode=False, # Sleepmodus uit
+                dragmode=False,
                 margin=dict(l=10, r=10, t=30, b=10),
                 paper_bgcolor='rgba(0,0,0,0)', 
                 plot_bgcolor='rgba(0,0,0,0)',
@@ -1505,7 +1505,7 @@ elif user["role"] == "director":
                     fig_s.update_layout(
                         height=600, 
                         margin=dict(t=20, b=20),
-                        dragmode=False # Sleepmodus uit
+                        dragmode=False
                     )
                     st.plotly_chart(fig_s, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
                 else:
