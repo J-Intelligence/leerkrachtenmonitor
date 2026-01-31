@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -14,7 +15,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
-    
 # --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
 def load_all_school_data():
     """Laadt alle CSV's uit de map, voegt ze samen en verwijdert namen."""
@@ -978,7 +978,7 @@ if user["role"] == "teacher":
                 st.warning("Er is geen data beschikbaar in de gekozen periode om een rapport van te maken.")
                         
 # <--- BELANGRIJK: DEZE ELIF MOET HELEMAAL TERUG NAAR LINKS (OF HETZELFDE NIVEAU ALS IF TEACHER)
-if user["role"] == "director":
+elif user["role"] == "director":
     # (Hier komt jouw bestaande code voor de directeur)
     pass
 # =================================================
