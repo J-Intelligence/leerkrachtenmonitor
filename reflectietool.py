@@ -13,6 +13,7 @@ from streamlit_gsheets import GSheetsConnection
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+import gc  # Garbage Collector
 
 # --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
 def load_all_school_data():
