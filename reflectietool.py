@@ -786,7 +786,7 @@ if user["role"] == "teacher":
 # TAB 4 – RAPPORT GENERATOR (MET SANKEY)
 # -------------------------------------------------
     # -------------------------------------------------
-    # TAB 4 – RAPPORT GENERATOR (VOLLEDIG GECORRIGEERD)
+    # TAB 4 – RAPPORT GENERATOR (LIGGEND + ENERGIE/RUST)
     # -------------------------------------------------
     with tab4:
         st.header("📑 Rapport Generator")
@@ -804,7 +804,6 @@ if user["role"] == "teacher":
 
         # =======================================================
         # STAP 2: DATA VOORBEREIDEN & METRICS BEREKENEN
-        # (Dit MOET hier staan, voordat we de PDF maken of de knop tonen)
         # =======================================================
         
         # A. Startdatum bepalen
@@ -819,7 +818,6 @@ if user["role"] == "teacher":
             start_date = pd.Timestamp(year=now.year - 1 if now.month < 9 else now.year, month=9, day=1)
 
         # B. Data kopiëren uit de variabelen van Tab 1 & 2
-        # We controleren veiligheidshalve of day_df en les_df bestaan
         if 'day_df' in locals() or 'day_df' in globals():
             r_day_df = day_df.copy()
         else:
@@ -834,18 +832,22 @@ if user["role"] == "teacher":
         if not r_day_df.empty: 
             r_day_df["Datum"] = pd.to_datetime(r_day_df["Datum"])
             r_day_df = r_day_df[r_day_df["Datum"] >= start_date]
+            # Zorg dat Rust bestaat voor het weekpatroon
+            if "Stress" in r_day_df.columns:
+                 r_day_df["Rust"] = 6 - pd.to_numeric(r_day_df["Stress"], errors='coerce')
+            if "Energie" in r_day_df.columns:
+                 r_day_df["Energie"] = pd.to_numeric(r_day_df["Energie"], errors='coerce')
 
         if not r_les_df.empty:
             r_les_df["Datum"] = pd.to_datetime(r_les_df["Datum"])
             r_les_df = r_les_df[r_les_df["Datum"] >= start_date]
 
-        # D. Metrics en Aantallen berekenen (CRUCIAAL VOOR DE ERROR)
+        # D. Metrics en Aantallen berekenen
         gem_en = r_day_df["Energie"].mean() if not r_day_df.empty else 0
         gem_str = r_day_df["Stress"].mean() if not r_day_df.empty else 0
         gem_les = r_les_df["Lesaanpak"].mean() if not r_les_df.empty else 0
         gem_mng = r_les_df["Klasmanagement"].mean() if not r_les_df.empty else 0
         
-        # Deze variabele zorgde voor de NameError, nu staat hij op tijd:
         aantal_l = len(r_les_df)
 
         # Helper functie voor tekst
@@ -854,24 +856,22 @@ if user["role"] == "teacher":
             diff = current - benchmark
             return f"{diff:+.1f} vs alle leerkrachten"
 
-        # E. Benchmark data laden (voor de vergelijkingstabel)
+        # E. Benchmark data laden
         try:
             benchmark_day_df = pd.read_csv("dag_check_db.csv") 
             benchmark_les_df = pd.read_csv("les_db.csv")
             
-            # Zeker zijn dat het numeriek is
             for col in ["Energie", "Stress"]:
                 if col in benchmark_day_df.columns:
                     benchmark_day_df[col] = pd.to_numeric(benchmark_day_df[col], errors='coerce')
             
             for col in ["Lesaanpak", "Klasmanagement"]:
                 if col in benchmark_les_df.columns:
-                    benchmark_les_df[col] = pd.to_numeric(benchmark_les_df[col], errors='coerce')     
+                    benchmark_les_df[col] = pd.to_numeric(benchmark_les_df[col], errors='coerce')      
         except FileNotFoundError:
             benchmark_day_df = pd.DataFrame()
             benchmark_les_df = pd.DataFrame()
 
-        # Globale gemiddelden
         glob_avg_en = benchmark_day_df["Energie"].mean() if not benchmark_day_df.empty else 0
         glob_avg_str = benchmark_day_df["Stress"].mean() if not benchmark_day_df.empty else 0
         glob_avg_les = benchmark_les_df["Lesaanpak"].mean() if not benchmark_les_df.empty else 0
@@ -884,7 +884,9 @@ if user["role"] == "teacher":
         if not r_les_df.empty and not r_day_df.empty:
             merged_df = pd.merge(r_les_df, r_day_df, on="Datum", how="inner")
             if len(merged_df) > 2: 
-                merged_df["Rust"] = 6 - merged_df["Stress"]
+                # Rust is al berekend in stap C, maar voor zekerheid:
+                if "Rust" not in merged_df.columns and "Stress" in merged_df.columns:
+                    merged_df["Rust"] = 6 - merged_df["Stress"]
                 has_correlation_data = True
 
         # =======================================================
@@ -894,15 +896,17 @@ if user["role"] == "teacher":
         
         try:
             import io
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
+            import numpy as np # Nodig voor grouped bar chart
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage, PageBreak
             from reportlab.lib.styles import getSampleStyleSheet
             from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4, landscape # A4 Landscape import
             import seaborn as sns 
             import matplotlib.pyplot as plt
             pdf_available = True
         except ImportError:
             pdf_available = False
-            st.error("⚠️ PDF Module (ReportLab of Seaborn) ontbreekt.")
+            st.error("⚠️ PDF Module (ReportLab, Seaborn of Numpy) ontbreekt.")
 
         if pdf_available:
             
@@ -914,22 +918,29 @@ if user["role"] == "teacher":
                     img_buf = io.BytesIO()
                     fig.savefig(img_buf, format='png', dpi=120, bbox_inches='tight')
                     img_buf.seek(0)
-                    return ReportLabImage(img_buf, width=400, height=220)
+                    # Iets breder maken omdat we landscape werken
+                    return ReportLabImage(img_buf, width=600, height=300)
 
                 # Helper: Plotly naar Afbeelding (Voor Sankey)
                 def plotly_to_pdf_img(fig):
                     try:
-                        # Vereist 'kaleido' package
-                        img_bytes = fig.to_image(format="png", width=1000, height=600, scale=2)
+                        # Landscape formaat: breder
+                        img_bytes = fig.to_image(format="png", width=1100, height=600, scale=2)
                         img_buf = io.BytesIO(img_bytes)
-                        return ReportLabImage(img_buf, width=460, height=276)
+                        return ReportLabImage(img_buf, width=700, height=380)
                     except Exception as e:
                         return None
 
                 raw_name = user['email'].split('@')[0]
                 clean_name = raw_name.replace('.', ' ').title() 
                 
-                doc = SimpleDocTemplate(buffer)
+                # --- LANDSCAPE INSTELLING ---
+                doc = SimpleDocTemplate(
+                    buffer, 
+                    pagesize=landscape(A4),
+                    rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
+                )
+                
                 styles = getSampleStyleSheet()
                 story = []
                 
@@ -941,7 +952,7 @@ if user["role"] == "teacher":
 
                 # HEADER
                 story.append(Paragraph("Leerkrachten Monitor: Analyse Rapport", title_style))
-                story.append(Paragraph(f"<b>Leerkracht:</b> {clean_name}<br/><b>Periode:</b> {rapport_periode}", styles["Normal"]))
+                story.append(Paragraph(f"<b>Leerkracht:</b> {clean_name} | <b>Periode:</b> {rapport_periode}", styles["Normal"]))
                 story.append(Spacer(1, 20))
 
                 # SECTIE 1: Kerncijfers
@@ -957,7 +968,8 @@ if user["role"] == "teacher":
                     ["Klasmanagement", f"{gem_mng:.1f}", f"{glob_avg_mng:.1f}", get_delta_text(gem_mng, glob_avg_mng)],
                 ]
                 
-                t = Table(tbl_data, colWidths=[120, 100, 140, 100])
+                # Tabel breder maken voor landscape
+                t = Table(tbl_data, colWidths=[150, 120, 160, 150])
                 t.setStyle(TableStyle([
                     ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#34495e")),
                     ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -972,7 +984,8 @@ if user["role"] == "teacher":
                 # SECTIE 2: Correlaties
                 story.append(Paragraph("2. Samenhang & Patronen", h2_style))
                 if has_correlation_data:
-                    fig_pdf_corr, ax_pdf_corr = plt.subplots(figsize=(6, 4))
+                    # Iets bredere heatmap
+                    fig_pdf_corr, ax_pdf_corr = plt.subplots(figsize=(8, 4))
                     sns.heatmap(merged_df[["Klasmanagement", "Lesaanpak", "Energie", "Rust"]].corr(), 
                                 annot=True, cmap="coolwarm", vmin=-1, vmax=1, center=0, 
                                 fmt=".2f", cbar=False, ax=ax_pdf_corr)
@@ -981,30 +994,53 @@ if user["role"] == "teacher":
                 else:
                     story.append(Paragraph("Onvoldoende data voor correlaties.", styles["Italic"]))
 
-                # SECTIE 3: Weekpatroon
-                story.append(Paragraph("3. Weekpatroon (Lesaanpak)", h2_style))
-                if not r_les_df.empty:
-                    r_les_df["Weekdag"] = r_les_df["Datum"].dt.day_name()
+                story.append(PageBreak()) # Nieuwe pagina voor weekpatroon & Sankey
+
+                # SECTIE 3: Weekpatroon (Energie & Rust)
+                story.append(Paragraph("3. Weekpatroon: Energie & Rust", h2_style))
+                
+                if not r_day_df.empty:
+                    # Weekdag toevoegen
+                    r_day_df["Weekdag"] = r_day_df["Datum"].dt.day_name()
                     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-                    week_scores = r_les_df.groupby("Weekdag")["Lesaanpak"].mean().reindex(days).dropna()
                     
-                    if not week_scores.empty:
-                        fig_bar, ax_bar = plt.subplots(figsize=(6, 3))
-                        ax_bar.bar(week_scores.index, week_scores.values, color="#27ae60")
+                    # Groeperen (gemiddelde Energie en Rust per dag)
+                    week_scores = r_day_df.groupby("Weekdag")[["Energie", "Rust"]].mean().reindex(days)
+                    
+                    # Checken of er data is na reindex (ign weekend)
+                    if not week_scores.dropna(how='all').empty:
+                        # Bar chart maken
+                        fig_bar, ax_bar = plt.subplots(figsize=(10, 4))
+                        
+                        x = np.arange(len(days))
+                        width = 0.35 
+                        
+                        # Bars tekenen
+                        rects1 = ax_bar.bar(x - width/2, week_scores["Energie"], width, label='Energie', color='#2ecc71')
+                        rects2 = ax_bar.bar(x + width/2, week_scores["Rust"], width, label='Rust', color='#3498db')
+                        
+                        ax_bar.set_ylabel('Score (1-5)')
+                        ax_bar.set_xticks(x)
+                        ax_bar.set_xticklabels(['Ma', 'Di', 'Wo', 'Do', 'Vr'])
                         ax_bar.set_ylim(0, 5.5)
+                        ax_bar.legend(loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=2, frameon=False)
+                        ax_bar.grid(axis='y', linestyle='--', alpha=0.5)
+                        
                         story.append(plot_to_img(fig_bar))
                         plt.close(fig_bar)
                     else:
-                        story.append(Paragraph("Geen weekpatroon data.", styles["Italic"]))
+                        story.append(Paragraph("Geen weekdata beschikbaar voor werkdagen.", styles["Italic"]))
+                else:
+                    story.append(Paragraph("Geen welzijnsdata beschikbaar.", styles["Italic"]))
                 
+                story.append(Spacer(1, 15))
+
                 # SECTIE 4: SANKEY INTEGRATIE
                 story.append(Paragraph("4. Oorzaak & Gevolg (Flow)", h2_style))
-                story.append(Paragraph("Hoe jouw klasmanagement doorvloeit naar je lesaanpak (en andersom).", styles["Normal"]))
+                story.append(Paragraph("De flow van Klasmanagement naar Lesaanpak.", styles["Normal"]))
                 story.append(Spacer(1, 10))
 
-                # We controleren of de draw_sankey_butterfly functie bestaat en of er data is
                 if not r_les_df.empty and 'draw_sankey_butterfly' in globals():
-                    # r_les_df is al gefilterd voor deze leraar
                     fig_sankey = draw_sankey_butterfly(r_les_df)
                     
                     if fig_sankey:
@@ -1014,11 +1050,11 @@ if user["role"] == "teacher":
                         if sankey_img:
                             story.append(sankey_img)
                         else:
-                            story.append(Paragraph("<i>Kon de Sankey niet genereren (kaleido module ontbreekt mogelijk).</i>", styles["Normal"]))
+                            story.append(Paragraph("<i>Kon de Sankey niet genereren.</i>", styles["Normal"]))
                     else:
                         story.append(Paragraph("Te weinig flows om te visualiseren.", styles["Italic"]))
                 else:
-                    story.append(Paragraph("Geen data beschikbaar.", styles["Italic"]))
+                    story.append(Paragraph("Geen lesdata beschikbaar.", styles["Italic"]))
 
                 doc.build(story)
                 buffer.seek(0)
@@ -1027,7 +1063,6 @@ if user["role"] == "teacher":
             # =======================================================
             # STAP 4: DOWNLOAD KNOP TONEN
             # =======================================================
-            # Nu bestaat 'aantal_l' zeker weten, want Stap 2 is uitgevoerd.
             if aantal_l > 0 or not r_day_df.empty:
                 pdf_data = generate_pdf()
                 clean_filename = f"Rapport_{user['email'].split('@')[0].replace('.', '_')}.pdf"
