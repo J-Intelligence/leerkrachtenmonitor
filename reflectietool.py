@@ -14,23 +14,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
-# ========================================================
-# HARDE FIX: Forceer de gebruiker
-# ========================================================
-# Dit maakt de variabele 'user' aan voordat eender wat anders gebeurt.
-user = {
-    "role": "director",
-    "email": "directie@school.be",
-    "name": "Test Directeur"
-}
-# ========================================================
-
-st.write("Debug info:")
-if 'user' in locals() or 'user' in globals():
-    st.write(f"Huidige rol: {user.get('role', 'Geen rol gevonden')}")
-else:
-    st.error("De variabele 'user' bestaat niet!")
-
     
 # --- NIEUWE FUNCTIES VOOR DE DIRECTIE (ANONIEM) ---
 def load_all_school_data():
