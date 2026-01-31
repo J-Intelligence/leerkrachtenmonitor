@@ -1265,85 +1265,152 @@ elif user["role"] == "director":
     # TAB 2: WELZIJN (DIRECTIE)
     # ==========================================
     with tab_wellbeing:
-        w_col1, w_col2 = st.columns([4, 1])
-        with w_col1: st.subheader("Hoe evolueert het welbevinden van het personeel")
-        with w_col2: 
-            w_choice = st.selectbox("Periode", ["Volledig schooljaar", "Afgelopen maand"], label_visibility="collapsed", key="w_filt")
+        st.subheader("📊 Welzijnstrend Personeel")
+        
+        # 1. Selectie en Data Filteren
+        w_col1, w_col2 = st.columns([1, 3]) # Iets andere verhouding
+        with w_col1: 
+            w_choice = st.selectbox(
+                "Periode", 
+                ["Afgelopen maand", "Afgelopen 3 maanden", "Volledig schooljaar"], 
+                label_visibility="collapsed", 
+                key="w_filt"
+            )
 
-        # Datum filter bepalen
+        # Datum grenzen bepalen
         if w_choice == "Afgelopen maand":
-            start_w = today - pd.Timedelta(days=30)
+            days_back = 30
+        elif w_choice == "Afgelopen 3 maanden":
+            days_back = 90
         else:
-            start_w = pd.Timestamp(year=today.year if today.month >= 9 else today.year - 1, month=9, day=1)
+            days_back = 300 # Ongeveer een schooljaar
+
+        start_w = today - pd.Timedelta(days=days_back)
         
         # Data kopiëren en filteren
         df_w = df_wellbeing_raw[df_wellbeing_raw["Datum"] >= start_w].copy()
 
+        # Check: Is er data?
         if not df_w.empty:
-            # 1. Zorg dat we met 'Rust' rekenen. 
+            # Data schoonmaken en Rust berekenen
             if "Rust" not in df_w.columns and "Stress" in df_w.columns:
                 df_w["Rust"] = 6 - pd.to_numeric(df_w["Stress"], errors='coerce')
             
-            # Zeker zijn dat het getallen zijn
             for col in ["Energie", "Rust"]:
                 if col in df_w.columns:
                     df_w[col] = pd.to_numeric(df_w[col], errors='coerce')
 
-            # Groeperen per datum (gemiddelde van alle docenten op die dag)
+            # Groeperen per datum (gemiddelde van het team)
             daily_avg = df_w.groupby("Datum")[["Energie", "Rust"]].mean().reset_index().sort_values("Datum")
             
+            # --- GRAFIEK BOUWEN ---
             fig_trend = go.Figure()
             
-            # LIJN 1: Energie (Groen)
+            # LIJN 1: Energie
             fig_trend.add_trace(go.Scatter(
-                x=daily_avg['Datum'], y=daily_avg['Energie'], mode='lines', 
-                line=dict(color='#2ecc71', width=3), showlegend=False
+                x=daily_avg['Datum'], y=daily_avg['Energie'], 
+                mode='lines+markers', # Markers toegevoegd voor duidelijkheid
+                name='Energie',
+                line=dict(color='#2ecc71', width=3),
+                marker=dict(size=6)
             ))
             
-            # LIJN 2: Rust (Blauw)
+            # LIJN 2: Rust
             fig_trend.add_trace(go.Scatter(
-                x=daily_avg['Datum'], y=daily_avg['Rust'], mode='lines', 
-                line=dict(color='#3498db', width=3), showlegend=False
+                x=daily_avg['Datum'], y=daily_avg['Rust'], 
+                mode='lines+markers',
+                name='Rust',
+                line=dict(color='#3498db', width=3),
+                marker=dict(size=6)
             ))
-            
-            # Annotaties
-            last_pt = daily_avg.iloc[-1]
-            fig_trend.add_annotation(
-                x=last_pt['Datum'], y=last_pt['Energie'], 
-                text="Energie", showarrow=False, xanchor="left", xshift=10, 
-                font=dict(color="#2ecc71", size=14)
-            )
-            fig_trend.add_annotation(
-                x=last_pt['Datum'], y=last_pt['Rust'], 
-                text="Rust", showarrow=False, xanchor="left", xshift=10, 
-                font=dict(color="#3498db", size=14)
-            )
 
-            # Layout styling MET Y-as aanpassingen
+            # Layout optimalisatie (Zelfde stijl als Leerkracht view)
             fig_trend.update_layout(
-                height=450,
-                xaxis=dict(showgrid=False, showline=False, tickformat="%d %b"),
-                yaxis=dict(
-                    showgrid=True,                    # Raster aan
-                    gridcolor='rgba(200,200,200,0.2)', # Heel subtiel transparant grijs
-                    showline=False,                   # Geen harde lijn links
-                    showticklabels=True,              # Wel cijfers tonen
-                    title=None,                       # Geen titel 'Score' o.i.d.
-                    range=[0.5, 5.5]
-                ),
+                height=350,
+                margin=dict(l=10, r=10, t=30, b=10),
                 paper_bgcolor='rgba(0,0,0,0)', 
                 plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(r=80)
+                legend=dict(
+                    orientation="h", 
+                    yanchor="bottom", y=1.02, 
+                    xanchor="right", x=1
+                ),
+                xaxis=dict(
+                    showgrid=False, 
+                    tickformat="%d %b", # Korte datumnotatie
+                    dtick="D1" if len(daily_avg) < 15 else None
+                ),
+                yaxis=dict(
+                    showgrid=True, 
+                    gridcolor='rgba(200,200,200,0.2)',
+                    range=[0.5, 5.5],
+                    fixedrange=True
+                )
             )
 
-            # RODE BAND: Gevarenzone ONDERAAN (0 tot 2.5)
+            # Gevarenzone
             fig_trend.add_hrect(
                 y0=0, y1=2.5, 
-                fillcolor="#e74c3c", opacity=0.1, line_width=0,
-                annotation_text="⚠️ Let op", annotation_position="bottom right"
+                fillcolor="#e74c3c", opacity=0.08, line_width=0
             )
 
-            st.plotly_chart(fig_trend, use_container_width=True)
+            st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False})
+
+            # --- TREND ANALYSE (METRICS) ---
+            st.divider()
+            st.markdown("##### 📉 Vergelijking met voorgaande periode")
+            
+            # Huidige periode gemiddelden
+            avg_en_cur = df_w["Energie"].mean()
+            avg_ru_cur = df_w["Rust"].mean()
+
+            # Vorige periode ophalen (voor de vergelijking)
+            start_prev = start_w - pd.Timedelta(days=days_back)
+            df_prev = df_wellbeing_raw[
+                (df_wellbeing_raw["Datum"] >= start_prev) & 
+                (df_wellbeing_raw["Datum"] < start_w)
+            ]
+
+            # Vorige gemiddelden berekenen
+            if not df_prev.empty:
+                # Zorg ook hier voor conversie
+                if "Rust" not in df_prev.columns and "Stress" in df_prev.columns:
+                    df_prev["Rust"] = 6 - pd.to_numeric(df_prev["Stress"], errors='coerce')
+                
+                avg_en_prev = df_prev["Energie"].mean()
+                avg_ru_prev = df_prev["Rust"].mean()
+                
+                delta_en = avg_en_cur - avg_en_prev
+                delta_ru = avg_ru_cur - avg_ru_prev
+            else:
+                delta_en = 0
+                delta_ru = 0
+
+            # Kolommen voor de metrics
+            m_col1, m_col2, m_col3 = st.columns(3)
+            
+            with m_col1:
+                st.metric(
+                    label="Gem. Energie",
+                    value=f"{avg_en_cur:.1f}",
+                    delta=f"{delta_en:+.1f}" if delta_en != 0 else None
+                )
+            
+            with m_col2:
+                st.metric(
+                    label="Gem. Rust",
+                    value=f"{avg_ru_cur:.1f}",
+                    delta=f"{delta_ru:+.1f}" if delta_ru != 0 else None
+                )
+                
+            with m_col3:
+                 st.metric(
+                    label="Aantal metingen",
+                    value=len(df_w),
+                    delta=f"{len(df_w) - len(df_prev)}" if not df_prev.empty else None,
+                    delta_color="off" # Grijs, want meer metingen is niet per se 'beter' of 'slechter'
+                )
+
         else:
             st.info("Geen data beschikbaar voor deze periode.")
     # ==========================================
