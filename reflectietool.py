@@ -466,13 +466,14 @@ if user["role"] == "teacher":
                 st.markdown("---")
 
                 # Submit knop
+                # Submit knop
                 if st.form_submit_button("Les opslaan"):
                     lesaanpak_cijfer = int(aanpak_input.split(":")[0])
                     klasmanagement_cijfer = int(mgmt_input.split(":")[0])
 
-                    # 1. Maak de nieuwe rij aan
+                    # 1. Maak de nieuwe rij aan (dit blijft hetzelfde)
                     new_lesson = pd.DataFrame([{
-                        "Email": user["email"],  # BELANGRIJK: We voegen nu Email toe!
+                        "Email": user["email"],
                         "Datum": str(pd.Timestamp.now()),
                         "Klas": klas,
                         "Lesaanpak": lesaanpak_cijfer,
@@ -481,17 +482,29 @@ if user["role"] == "teacher":
                         "Negatief": ", ".join(negatief)
                     }])
 
-                    # 2. Voeg toe aan de COMPLETE dataset (van alle leraren)
-                    # We gebruiken hier concat om de nieuwe rij onderaan de bestaande data te plakken
-                    updated_lessons = pd.concat([all_lessons_data, new_lesson], ignore_index=True)
-                    
-                    # 3. Update Google Sheets
-                    conn.update(spreadsheet=SHEET_URL, worksheet="Lessons", data=updated_lessons)
-                    
-                    st.success(f"Les in {klas} opgeslagen in de Cloud!")
-                    
-                    # Cache clearen zodat tab 3 de nieuwe data ziet
-                    st.cache_data.clear()
+                    # --- DE FIX START HIER ---
+                    try:
+                        # 2. Haal NU pas de allerlaatste data op (Forceer refresh met ttl=0)
+                        # We vertrouwen niet op de 'all_lessons_data' die bovenaan het script geladen is.
+                        current_data = conn.read(spreadsheet=SHEET_URL, worksheet="Lessons", ttl=0)
+                        
+                        # Als de sheet nog leeg is of headers mist, start met lege DF
+                        if current_data.empty or "Email" not in current_data.columns:
+                             updated_lessons = new_lesson
+                        else:
+                             # Zorg dat datums strings zijn of consistent, om merge errors te voorkomen
+                             updated_lessons = pd.concat([current_data, new_lesson], ignore_index=True)
+                        
+                        # 3. Update Google Sheets met de COMPLETE set
+                        conn.update(spreadsheet=SHEET_URL, worksheet="Lessons", data=updated_lessons)
+                        
+                        st.success(f"✅ Les in {klas} succesvol opgeslagen!")
+                        
+                        # Cache clearen is cruciaal zodat je eigen scherm ook update
+                        st.cache_data.clear()
+                        
+                    except Exception as e:
+                        st.error(f"Er ging iets mis met opslaan: {e}")
         
         # Roep de functie aan
         render_lesregistratie()
