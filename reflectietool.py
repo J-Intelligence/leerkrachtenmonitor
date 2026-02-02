@@ -208,13 +208,25 @@ def lesson_file(email):
 # -------------------------------------------------
 # USERS
 # -------------------------------------------------
+# --- AANGEPASTE USERS FUNCTIES (GOOGLE SHEETS) ---
 def load_users():
-    if not os.path.exists(USERS_FILE):
-        pd.DataFrame(columns=["email", "password", "role"]).to_csv(USERS_FILE, index=False)
-    return pd.read_csv(USERS_FILE)
+    # We maken verbinding
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    try:
+        # We lezen het tabblad 'Users'. TTL=0 betekent geen caching (altijd verse data)
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="Users", ttl=0)
+        # Zorg dat de kolommen bestaan als de sheet leeg is
+        if df.empty or "email" not in df.columns:
+            return pd.DataFrame(columns=["email", "password", "role"])
+        return df
+    except Exception:
+        # Fallback als er iets mis is, return lege dataframe
+        return pd.DataFrame(columns=["email", "password", "role"])
 
 def save_users(df):
-    df.to_csv(USERS_FILE, index=False)
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    # Overschrijf het tabblad 'Users' met de nieuwe dataframe
+    conn.update(spreadsheet=SHEET_URL, worksheet="Users", data=df)
 
 # -------------------------------------------------
 # AUTO LOGIN
@@ -296,44 +308,46 @@ KLASSEN = [
 # =============== LEERKRACHT VIEW =================
 # =================================================
 if user["role"] == "teacher":
-
-    LES_FILE = lesson_file(user["email"])
-
-    # 1. Google Sheets Verbinding (Zorg dat secrets zijn ingesteld!)
-    conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # 2. Laden van data uit Google Sheets met TTL=0 (geen cache)
+    # 1. Verbinding maken
+    conn = st.connection("gsheets", type=GSheetsConnection)
+
+    # --- A. DAGGEVOEL LADEN (Bestaande code, iets robuuster) ---
     try:
-        # We halen de data op. ttl=0 zorgt dat we ALTIJD de nieuwste versie zien.
-        all_day_data = conn.read(spreadsheet=SHEET_URL, ttl=0)
-        
+        all_day_data = conn.read(spreadsheet=SHEET_URL, worksheet=0, ttl=0) # worksheet 0 is het eerste tabblad
         if not all_day_data.empty and "Email" in all_day_data.columns:
-            # Filter op e-mail (case-insensitive en zonder spaties)
             day_df = all_day_data[all_day_data["Email"].str.strip().str.lower() == user["email"].lower()].copy()
-            
-            # CRUCIAAL: Zet kolommen om naar de juiste types
-            # Als dit niet gebeurt, tekent de grafiek in Tab 3 niets!
+            # Types goedzetten
             day_df["Datum"] = pd.to_datetime(day_df["Datum"], errors="coerce")
             day_df["Energie"] = pd.to_numeric(day_df["Energie"], errors="coerce")
             day_df["Stress"] = pd.to_numeric(day_df["Stress"], errors="coerce")
-            
-            # Verwijder rijen waar de conversie mislukt is
-            day_df = day_df.dropna(subset=["Datum", "Energie", "Stress"])
+            day_df = day_df.dropna(subset=["Datum"])
         else:
             day_df = pd.DataFrame(columns=["Email", "Datum", "Energie", "Stress"])
+            all_day_data = pd.DataFrame(columns=["Email", "Datum", "Energie", "Stress"])
     except Exception as e:
-        st.error(f"Fout bij verbinding met Google Sheets: {e}")
-        day_df = pd.DataFrame(columns=["Email", "Datum", "Energie", "Stress"])
-        all_day_data = day_df
+        st.error(f"Fout bij laden daggevoel: {e}")
+        day_df = pd.DataFrame()
 
-    # 3. Lokale Lesregistratie laden
-    if not os.path.exists(LES_FILE):
-        pd.DataFrame(columns=["Datum","Klas","Lesaanpak","Klasmanagement","Positief","Negatief"]).to_csv(LES_FILE, index=False)
-
-    les_df = pd.read_csv(LES_FILE)
-    # Ook hier datum omzetten voor de zekerheid
-    if not les_df.empty:
-        les_df["Datum"] = pd.to_datetime(les_df["Datum"], errors="coerce")
+    # --- B. LESSEN LADEN (NIEUW: Via Google Sheets 'Lessons' tabblad) ---
+    try:
+        all_lessons_data = conn.read(spreadsheet=SHEET_URL, worksheet="Lessons", ttl=0)
+        
+        # Check of sheet bestaat/leeg is, anders lege DF maken
+        if all_lessons_data.empty or "Email" not in all_lessons_data.columns:
+             all_lessons_data = pd.DataFrame(columns=["Email", "Datum", "Klas", "Lesaanpak", "Klasmanagement", "Positief", "Negatief"])
+        
+        # Filteren op de ingelogde gebruiker
+        les_df = all_lessons_data[all_lessons_data["Email"].str.strip().str.lower() == user["email"].lower()].copy()
+        
+        # Datum conversie
+        if not les_df.empty:
+            les_df["Datum"] = pd.to_datetime(les_df["Datum"], errors="coerce")
+            
+    except Exception as e:
+        st.error(f"Fout bij laden lessen: {e}")
+        all_lessons_data = pd.DataFrame(columns=["Email", "Datum", "Klas", "Lesaanpak", "Klasmanagement", "Positief", "Negatief"])
+        les_df = pd.DataFrame(columns=["Email", "Datum", "Klas", "Lesaanpak", "Klasmanagement", "Positief", "Negatief"])
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "🧠 Daggevoel",
@@ -453,21 +467,31 @@ if user["role"] == "teacher":
 
                 # Submit knop
                 if st.form_submit_button("Les opslaan"):
-                    # CONVERSIE: We moeten de tekst ("5: Top") terug omzetten naar een getal (5)
-                    # We pakken het eerste karakter van de string en maken er een int van.
                     lesaanpak_cijfer = int(aanpak_input.split(":")[0])
                     klasmanagement_cijfer = int(mgmt_input.split(":")[0])
 
-                    les_df.loc[len(les_df)] = [
-                        pd.Timestamp.now(),
-                        klas,
-                        lesaanpak_cijfer,      # Het getal opslaan
-                        klasmanagement_cijfer, # Het getal opslaan
-                        ", ".join(positief),
-                        ", ".join(negatief)
-                    ]
-                    les_df.to_csv(LES_FILE, index=False)
-                    st.success(f"Les in {klas} opgeslagen!")
+                    # 1. Maak de nieuwe rij aan
+                    new_lesson = pd.DataFrame([{
+                        "Email": user["email"],  # BELANGRIJK: We voegen nu Email toe!
+                        "Datum": str(pd.Timestamp.now()),
+                        "Klas": klas,
+                        "Lesaanpak": lesaanpak_cijfer,
+                        "Klasmanagement": klasmanagement_cijfer,
+                        "Positief": ", ".join(positief),
+                        "Negatief": ", ".join(negatief)
+                    }])
+
+                    # 2. Voeg toe aan de COMPLETE dataset (van alle leraren)
+                    # We gebruiken hier concat om de nieuwe rij onderaan de bestaande data te plakken
+                    updated_lessons = pd.concat([all_lessons_data, new_lesson], ignore_index=True)
+                    
+                    # 3. Update Google Sheets
+                    conn.update(spreadsheet=SHEET_URL, worksheet="Lessons", data=updated_lessons)
+                    
+                    st.success(f"Les in {klas} opgeslagen in de Cloud!")
+                    
+                    # Cache clearen zodat tab 3 de nieuwe data ziet
+                    st.cache_data.clear()
         
         # Roep de functie aan
         render_lesregistratie()
